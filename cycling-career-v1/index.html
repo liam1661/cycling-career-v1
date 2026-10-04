@@ -1,16 +1,489 @@
 <!DOCTYPE html>
-<html lang="da">
+<html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Cycling Career</title>
-  <link rel="stylesheet" href="style.css">
+    <meta charset="UTF-8">
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <title>Cycling Career</title>
+
+    <link
+        rel="stylesheet"
+        href="style.css"
+    >
 </head>
+
 <body>
-  <div id="app"></div>
-  <script src="data/teams.js"></script>
-  <script src="data/riders.js"></script>
-  <script src="data/races.js"></script>
-  <script src="script.js"></script>
+
+    <div id="app">
+
+        <!-- ========================================
+             START SCREEN
+        ========================================= -->
+
+        <main
+            id="screen-start"
+            class="screen active"
+        >
+
+            <section class="start-container">
+
+                <div class="start-brand">
+
+                    <div class="brand-mark">
+                        CC
+                    </div>
+
+                    <div>
+                        <p class="brand-label">
+                            CYCLING CAREER
+                        </p>
+
+                        <h1>
+                            Build your career.
+                        </h1>
+
+                        <p class="start-description">
+                            Start as a young rider and
+                            build your way through the
+                            professional cycling world.
+                        </p>
+                    </div>
+
+                </div>
+
+
+                <div class="start-actions">
+
+                    <button
+                        class="primary-button"
+                        id="new-career-button"
+                    >
+                        New Career
+                    </button>
+
+                    <button
+                        class="secondary-button"
+                        id="continue-career-button"
+                    >
+                        Continue Career
+                    </button>
+
+                    <button
+                        class="secondary-button"
+                        id="load-career-button"
+                    >
+                        Load Career
+                    </button>
+
+                    <button
+                        class="secondary-button"
+                        id="settings-button"
+                    >
+                        Settings
+                    </button>
+
+                </div>
+
+
+                <div class="start-footer">
+
+                    <span>
+                        Cycling Career
+                    </span>
+
+                    <span>
+                        Version 0.1.0
+                    </span>
+
+                </div>
+
+            </section>
+
+        </main>
+
+
+        <!-- ========================================
+             CREATE RIDER SCREEN
+        ========================================= -->
+
+        <main
+            id="screen-create-rider"
+            class="screen"
+        >
+
+            <section class="creation-container">
+
+                <header class="screen-header">
+
+                    <div>
+                        <p class="eyebrow">
+                            NEW CAREER
+                        </p>
+
+                        <h2>
+                            Create your rider
+                        </h2>
+
+                        <p>
+                            Start your career as a young
+                            rider with your own profile.
+                        </p>
+                    </div>
+
+                    <div
+                        id="creation-progress"
+                        class="progress-display"
+                    >
+                        0 / 5
+                    </div>
+
+                </header>
+
+
+                <div class="creation-grid">
+
+                    <!-- NAME -->
+
+                    <section class="creation-card">
+
+                        <p class="card-label">
+                            Rider
+                        </p>
+
+                        <h3>
+                            Name
+                        </h3>
+
+                        <input
+                            type="text"
+                            id="rider-name"
+                            placeholder="Enter rider name"
+                            maxlength="40"
+                        >
+
+                    </section>
+
+
+                    <!-- COUNTRY -->
+
+                    <section class="creation-card">
+
+                        <p class="card-label">
+                            Identity
+                        </p>
+
+                        <h3>
+                            Country
+                        </h3>
+
+                        <select id="rider-country">
+
+                            <option value="">
+                                Select country
+                            </option>
+
+                        </select>
+
+                    </section>
+
+
+                    <!-- AGE -->
+
+                    <section class="creation-card">
+
+                        <p class="card-label">
+                            Career start
+                        </p>
+
+                        <h3>
+                            Age
+                        </h3>
+
+                        <div
+                            id="age-options"
+                            class="option-row"
+                        >
+                        </div>
+
+                    </section>
+
+
+                    <!-- PROFILE -->
+
+                    <section class="creation-card creation-card-wide">
+
+                        <p class="card-label">
+                            Rider profile
+                        </p>
+
+                        <h3>
+                            What kind of rider are you?
+                        </h3>
+
+                        <div
+                            id="profile-options"
+                            class="profile-grid"
+                        >
+                        </div>
+
+                    </section>
+
+
+                    <!-- TENDENCY -->
+
+                    <section class="creation-card creation-card-wide">
+
+                        <p class="card-label">
+                            Development
+                        </p>
+
+                        <h3>
+                            Natural tendency
+                        </h3>
+
+                        <div
+                            id="tendency-options"
+                            class="profile-grid"
+                        >
+                        </div>
+
+                    </section>
+
+                </div>
+
+
+                <!-- GENERATION -->
+
+                <section
+                    id="generated-rider-card"
+                    class="generated-rider-card hidden"
+                >
+
+                    <div class="generated-header">
+
+                        <div>
+                            <p class="card-label">
+                                GENERATED RIDER
+                            </p>
+
+                            <h3 id="generated-rider-name">
+                                -
+                            </h3>
+                        </div>
+
+                        <div
+                            id="generated-rider-level"
+                            class="rider-level"
+                        >
+                            -
+                        </div>
+
+                    </div>
+
+
+                    <div
+                        id="generated-rider-stats"
+                        class="generated-stats"
+                    >
+                    </div>
+
+
+                    <div
+                        id="generated-rider-development"
+                        class="generated-development"
+                    >
+                    </div>
+
+                </section>
+
+
+                <!-- ACTIONS -->
+
+                <div class="creation-actions">
+
+                    <button
+                        class="secondary-button"
+                        id="back-to-start-button"
+                    >
+                        Back
+                    </button>
+
+                    <div class="creation-main-actions">
+
+                        <button
+                            class="secondary-button"
+                            id="regenerate-rider-button"
+                            disabled
+                        >
+                            Regenerate
+                        </button>
+
+                        <button
+                            class="primary-button"
+                            id="generate-rider-button"
+                            disabled
+                        >
+                            Generate Rider
+                        </button>
+
+                        <button
+                            class="primary-button hidden"
+                            id="accept-rider-button"
+                        >
+                            Accept Rider
+                        </button>
+
+                    </div>
+
+                </div>
+
+            </section>
+
+        </main>
+
+
+        <!-- ========================================
+             OFFERS SCREEN
+        ========================================= -->
+
+        <main
+            id="screen-offers"
+            class="screen"
+        >
+
+            <section class="offers-container">
+
+                <header class="screen-header">
+
+                    <div>
+                        <p class="eyebrow">
+                            FIRST CONTRACT
+                        </p>
+
+                        <h2>
+                            Choose your team
+                        </h2>
+
+                        <p>
+                            Several teams are interested
+                            in giving you your first opportunity.
+                        </p>
+                    </div>
+
+                </header>
+
+
+                <div
+                    id="team-offers"
+                    class="offers-grid"
+                >
+                </div>
+
+            </section>
+
+        </main>
+
+
+        <!-- ========================================
+             MAIN GAME SHELL
+        ========================================= -->
+
+        <main
+            id="screen-game"
+            class="screen"
+        >
+
+            <div class="game-layout">
+
+                <aside class="sidebar">
+
+                    <div class="sidebar-brand">
+                        <div class="brand-mark small">
+                            CC
+                        </div>
+
+                        <span>
+                            CYCLING CAREER
+                        </span>
+                    </div>
+
+
+                    <nav
+                        id="main-navigation"
+                        class="main-navigation"
+                    >
+                    </nav>
+
+
+                    <div class="sidebar-player">
+
+                        <div
+                            id="sidebar-player-name"
+                            class="sidebar-player-name"
+                        >
+                            -
+                        </div>
+
+                        <div
+                            id="sidebar-player-team"
+                            class="sidebar-player-team"
+                        >
+                            Unsigned
+                        </div>
+
+                    </div>
+
+                </aside>
+
+
+                <section class="game-content">
+
+                    <header class="game-header">
+
+                        <div>
+                            <p
+                                id="game-header-eyebrow"
+                                class="eyebrow"
+                            >
+                                CYCLING CAREER
+                            </p>
+
+                            <h2
+                                id="game-header-title"
+                            >
+                                Dashboard
+                            </h2>
+                        </div>
+
+                        <button
+                            id="continue-button"
+                            class="primary-button"
+                        >
+                            Continue
+                        </button>
+
+                    </header>
+
+
+                    <div
+                        id="game-screen-content"
+                        class="game-screen-content"
+                    >
+                    </div>
+
+                </section>
+
+            </div>
+
+        </main>
+
+    </div>
+
+
+    <script src="script.js"></script>
+
 </body>
 </html>

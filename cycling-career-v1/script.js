@@ -1,213 +1,3243 @@
-const STAT_LABELS={
-sprint:"Sprint",acceleration:"Acceleration",endurance:"Endurance",recovery:"Recovery",
-flat:"Flat",hill:"Hill",mediumMountain:"Medium Mountain",mountain:"Mountain",
-cobblestones:"Cobblestones",itt:"ITT",positioning:"Positioning",raceIQ:"Race IQ",
-technique:"Technique",mentality:"Mentality",teamwork:"Teamwork"
-};
-const STAT_GROUPS={
-"Physical":["sprint","acceleration","endurance","recovery"],
-"Terrain":["flat","hill","mediumMountain","mountain","cobblestones","itt"],
-"Race":["positioning","raceIQ","technique","mentality","teamwork"]
-};
-const APP_KEY="cyclingCareerSaveV1";
-let state=loadState();
-const app=document.getElementById("app");
+// ============================================
+// CYCLING CAREER
+// script.js — Del 1
+// Game State & Core Structure
+// ============================================
 
-function loadState(){
-  try{const x=JSON.parse(localStorage.getItem(APP_KEY));if(x)return x}catch(e){}
-  return {screen:"start",player:null,offers:[],team:null,contract:null,agent:null,currentDate:"2026-01-05",
-    form:86,energy:100,fatigue:12,experience:0,inbox:[],history:[],training:null,worldSeed:Math.floor(Math.random()*999999),worldTick:0,
-    selectedRace:null,toast:null};
+
+// --------------------------------------------
+// GAME STATE
+// --------------------------------------------
+
+const game = {
+
+    // Game
+    version: "0.1.0",
+    currentScreen: "start",
+    gameStarted: false,
+
+    // Career
+    career: {
+        currentDate: "2026-01-01",
+        season: 2026,
+        daysPassed: 0
+    },
+
+    // Player
+    player: null,
+
+    // Team
+    team: null,
+
+    // Contract
+    contract: null,
+
+    // Agent
+    agent: null,
+
+    // Current race
+    currentRace: null,
+
+    // World
+    world: {
+        year: 2026,
+        simulationDays: 0,
+        worldEvents: []
+    },
+
+    // Inbox
+    inbox: [],
+
+    // Career history
+    history: [],
+
+    // Relationships
+    relationships: [],
+
+    // Save data
+    saveVersion: 1
+};
+
+
+// --------------------------------------------
+// SCREEN SYSTEM
+// --------------------------------------------
+
+const screens = [
+    "start",
+    "create-rider",
+    "offers",
+    "dashboard",
+    "rider",
+    "calendar",
+    "team",
+    "inbox",
+    "world",
+    "career",
+    "contract",
+    "settings",
+    "race"
+];
+
+
+// --------------------------------------------
+// NAVIGATION
+// --------------------------------------------
+
+function changeScreen(screen) {
+
+    if (!screens.includes(screen)) {
+        console.error(`Unknown screen: ${screen}`);
+        return;
+    }
+
+    game.currentScreen = screen;
+
+    console.log(`Screen changed to: ${screen}`);
+
+    render();
 }
-function save(){localStorage.setItem(APP_KEY,JSON.stringify(state))}
-function esc(v){return String(v??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[m]))}
-function money(n){return new Intl.NumberFormat("da-DK",{style:"currency",currency:"EUR",maximumFractionDigits:0}).format(n)}
-function toast(msg){state.toast=msg;save();render();setTimeout(()=>{state.toast=null;render()},1800)}
-function setScreen(s){state.screen=s;save();render()}
-function team(){return TEAMS.find(t=>t.id===state.team)}
-function addInbox(subject,type,body,priority="INFO",action=null){
- state.inbox.unshift({id:Date.now()+Math.random(),subject,type,body,priority,action,read:false,date:state.currentDate});
+
+
+// --------------------------------------------
+// GAME START
+// --------------------------------------------
+
+function startNewCareer() {
+
+    console.log("Starting new career...");
+
+    game.currentScreen = "create-rider";
+    game.gameStarted = false;
+
+    render();
 }
-function nav(){
- return `<aside class="sidebar"><div class="nav-title">Career</div><div class="nav">
- ${["dashboard:Dashboard","rider:Rider","calendar:Calendar","team:Team","inbox:Inbox","world:World","career:Career","contract:Contract","settings:Settings"].map(x=>{let [id,n]=x.split(":");return `<button class="${state.screen===id?"active":""}" onclick="setScreen('${id}')"><span>${n}</span></button>`}).join("")}
- </div></aside>`;
+
+
+// --------------------------------------------
+// CONTINUE CAREER
+// --------------------------------------------
+
+function continueCareer() {
+
+    console.log("Continue career");
+
+    if (!game.player) {
+        console.log("No career found.");
+        changeScreen("start");
+        return;
+    }
+
+    changeScreen("dashboard");
 }
-function shell(content){
- const unread=state.inbox.filter(x=>!x.read).length;
- return `<div class="app"><header class="topbar"><div class="brand">Cycling <span>Career</span></div><div class="top-meta"><span>${state.player?esc(state.player.name):"New Career"}</span>${state.player?`<span>${esc(state.currentDate)}</span>`:""}</div></header>
- <div class="layout">${state.player?nav():""}<main class="main">${content}</main></div>${state.toast?`<div class="toast">${esc(state.toast)}</div>`:""}</div>`;
+
+
+// --------------------------------------------
+// BASIC RENDER SYSTEM
+// --------------------------------------------
+
+function render() {
+
+    console.log("Rendering:", game.currentScreen);
+
+    /*
+        HTML bliver koblet på her senere.
+
+        Vi bygger først selve spillets
+        JavaScript-struktur, så alle systemer
+        har et fælles fundament.
+    */
 }
-function render(){app.innerHTML=state.screen==="start"?startScreen():state.screen==="create"?createScreen():state.screen==="offers"?offersScreen():state.screen==="race"?raceScreen():shell(screenContent())}
-function startScreen(){
- return `<div class="screen-center"><div class="start-card"><div class="logo">Cycling <span>Career</span></div>
- <p class="subtitle">Byg din karriere fra ukendt ungdomsrytter til professionel. Træn, vælg løb, opbyg relationer og se cykelverdenen udvikle sig omkring dig.</p>
- <div class="actions"><button class="btn primary" onclick="setScreen('create')">Ny karriere</button>
- <button class="btn" onclick="continueCareer()">Fortsæt karriere</button><button class="btn" onclick="setScreen('settings')">Indstillinger</button></div>
- <div class="section-space muted smalltext">V1 • 2026-sæsonen • Karriere-simulator</div></div></div>`;
+
+
+// --------------------------------------------
+// INITIALIZE GAME
+// --------------------------------------------
+
+function initializeGame() {
+
+    console.log("Cycling Career initialized.");
+
+    console.log("Game state:", game);
+
+    render();
 }
-function createScreen(){
- if(!state.creator)state.creator={name:"",country:"DK",age:17,profile:"Allround"};
- const c=state.creator;
- const profiles=[["Quick","Fokus på acceleration, sprint og fart."],["Climber","Naturlig tendens mod lange stigninger og recovery."],["Classics Rider","Tendens mod bakker, brosten og positionering."],["Time Trialist","Tendens mod ITT og udholdenhed."],["Allround","Bred og fleksibel startprofil."],["Own Profile","Mere uforudsigelig statfordeling."]];
- return `<div class="page-title"><div><h1>Opret din rytter</h1><p class="muted">Din profil bestemmer kun tendensen — ikke en fast klasse.</p></div></div>
- <div class="card"><div class="form-grid">
- <div class="field"><label>Navn</label><input value="${esc(c.name)}" oninput="state.creator.name=this.value"></div>
- <div class="field"><label>Land</label><select onchange="state.creator.country=this.value"><option value="DK"${c.country==="DK"?" selected":""}>🇩🇰 Danmark</option><option value="NO"${c.country==="NO"?" selected":""}>🇳🇴 Norge</option><option value="SE"${c.country==="SE"?" selected":""}>🇸🇪 Sverige</option><option value="BE"${c.country==="BE"?" selected":""}>🇧🇪 Belgien</option><option value="FR"${c.country==="FR"?" selected":""}>🇫🇷 Frankrig</option><option value="IT"${c.country==="IT"?" selected":""}>🇮🇹 Italien</option><option value="ES"${c.country==="ES"?" selected":""}>🇪🇸 Spanien</option><option value="NL"${c.country==="NL"?" selected":""}>🇳🇱 Holland</option></select></div>
- <div class="field"><label>Alder</label><select onchange="state.creator.age=Number(this.value)"><option ${c.age===16?"selected":""}>16</option><option ${c.age===17?"selected":""}>17</option><option ${c.age===18?"selected":""}>18</option></select></div></div>
- <div class="section-space"><label class="muted smalltext">Rytterprofil</label><div class="grid g3 section-space">${profiles.map(p=>`<div class="profile-choice ${c.profile===p[0]?"selected":""}" onclick="state.creator.profile='${p[0]}';render()"><strong>${p[0]}</strong><span class="muted smalltext">${p[1]}</span></div>`).join("")}</div></div>
- <div class="actions section-space"><button class="btn primary" onclick="generateRider()">Generér rytter</button><button class="btn" onclick="setScreen('start')">Tilbage</button></div></div>`;
+
+
+// --------------------------------------------
+// START
+// --------------------------------------------
+
+initializeGame();
+// ============================================
+// CYCLING CAREER
+// script.js — Del 2
+// Screen System & Navigation
+// ============================================
+
+function getCurrentScreen() {
+    return game.currentScreen;
 }
-function generateRider(){
- const c=state.creator;if(!c.name.trim()){toast("Skriv et navn først");return}
- const base={sprint:52,acceleration:50,endurance:53,recovery:51,flat:52,hill:49,mediumMountain:47,mountain:44,cobblestones:50,itt:45,positioning:43,raceIQ:40,technique:46,mentality:52,teamwork:50};
- const profileMods={
- Quick:{sprint:10,acceleration:9,flat:6},Climber:{endurance:7,recovery:7,mountain:12,mediumMountain:10},
- "Classics Rider":{hill:9,cobblestones:12,positioning:7,technique:5},"Time Trialist":{itt:14,endurance:7,flat:7},
- Allround:{endurance:5,flat:4,hill:4,positioning:4,raceIQ:4},"Own Profile":{}
- }[c.profile]||{};
- Object.keys(profileMods).forEach(k=>base[k]+=profileMods[k]);
- Object.keys(base).forEach(k=>base[k]+=Math.floor(Math.random()*9)-4);
- const potential={};Object.keys(base).forEach(k=>potential[k]=Math.min(92,Math.max(base[k]+8,base[k]+15+Math.floor(Math.random()*13))));
- state.player={id:"player",name:c.name.trim(),country:c.country,age:Number(c.age),profile:c.profile,stats:base,potential,development:Object.fromEntries(Object.keys(base).map(k=>[k,["Strong","Normal","Slow"][Math.floor(Math.random()*3)]]))};
- state.form=84;state.energy=100;state.fatigue=8;state.experience=0;state.currentDate="2026-01-05";state.offers=generateOffers();state.screen="offers";save();render();
+
+function isScreen(screen) {
+    return game.currentScreen === screen;
 }
-function generateOffers(){
- const candidates=[...TEAMS].sort(()=>Math.random()-.5).slice(0,4);
- return candidates.map(t=>({...t,offerSalary:Math.round((t.offers.salary*(1+(state.player.age-17)*.08)))}));
+
+function goToStart() {
+    changeScreen("start");
 }
-function offersScreen(){
- return `<div class="page-title"><div><h1>Team offers</h1><p class="muted">${esc(state.player.name)}, du har fået flere muligheder for din første sæson.</p></div></div>
- <div class="grid g2">${state.offers.map((o,i)=>`<div class="card offer"><div class="row"><h2>${esc(o.name)}</h2><span class="pill">${o.level}</span></div>
- <p class="muted">${o.style} • ${o.objective}</p><div class="offer-grid"><div><span>Rolle</span>${o.offers.role}</div><div><span>Løn / måned</span>${money(o.offerSalary)}</div><div><span>Budgetniveau</span>${o.budget}/40</div></div>
- <button class="btn primary" onclick="chooseTeam('${o.id}')">Vælg dette hold</button></div>`).join("")}</div>`;
+
+function goToCreateRider() {
+    changeScreen("create-rider");
 }
-function chooseTeam(id){state.team=id;const t=state.offers.find(x=>x.id===id);state.contract={team:id,start:"2026-01-05",end:"2027-12-31",salary:t.offerSalary,role:t.offers.role,status:"Active"};state.agent=null;
- addInbox("Velkommen til holdet","Team",`Sportsdirektøren byder dig velkommen til ${t.name}. Din første opgave er at finde din plads i hierarkiet.`,"IMPORTANT");
- addInbox("Du har ingen agent endnu","Agent","Du kan starte uden agent og finde en senere, når din karriere har fået retning.","INFO");
- state.screen="dashboard";save();render();}
-function dashboard(){
- const p=state.player,t=team(),next=nextRace();
- return `<div class="page-title"><div><h1>Dashboard</h1><p class="muted">Din karriere, lige nu.</p></div><button class="btn primary" onclick="continueCareer()">Fortsæt →</button></div>
- <div class="hero"><div class="row"><div><div class="muted">${p.country} • ${p.age} år • ${t.name}</div><div class="big">${esc(p.name)}</div><div class="muted">${p.profile} • ${state.contract.role}</div></div><span class="pill">Sæson 2026</span></div></div>
- <div class="grid g4">${metric("Form",state.form,"%")}${metric("Energy",state.energy,"%")}${metric("Fatigue",state.fatigue,"%")}${metric("Experience",state.experience,"")}</div>
- <div class="grid g2 section-space"><div class="card"><h2>Næste begivenhed</h2>${next?`<div class="row"><div><strong>${next.name}</strong><div class="muted">${next.type} • ${next.days} dag${next.days===1?"":"e"}</div></div><span class="pill">${next.month}. måned</span></div><p class="muted">${next.terrain} • Mål: ${next.goal}</p><div class="actions"><button class="btn" onclick="raceWish('${next.id}')">Ønsk løbet</button><button class="btn primary" onclick="startRace('${next.id}')">Start løb</button></div>`:`<p class="muted">Ingen kommende løb.</p>`}</div>
- <div class="card"><h2>Holdets fokus</h2><p>${t.objective}</p><div class="notice">Din rolle: <strong>${state.contract.role}</strong><br><span class="muted">Sportsdirektøren holder øje med din udvikling og dine resultater.</span></div></div></div>
- <div class="grid g3 section-space"><div class="card"><h3>Seneste udvikling</h3><p class="green">+1 Endurance</p><p class="muted">Træning og løb påvirker udviklingen over tid.</p></div><div class="card"><h3>Inbox</h3><p>${state.inbox.filter(x=>!x.read).length} ulæste beskeder</p><button class="btn small" onclick="setScreen('inbox')">Åbn inbox</button></div><div class="card"><h3>Sidste resultat</h3><p>${state.history.length?state.history[0].result:"Ingen løb endnu"}</p></div></div>`;
+
+function goToOffers() {
+    changeScreen("offers");
 }
-function metric(label,val,suf){return `<div class="card stat-card"><div class="label">${label}</div><div class="value">${Math.round(val)}${suf}</div><div class="progress"><i style="width:${Math.min(100,val)}%"></i></div></div>`}
-function nextRace(){const month=Number(state.currentDate.slice(5,7));return RACES.find(r=>r.month>=month)||RACES[0]}
-function riderPage(){
- const p=state.player;
- return `<div class="page-title"><div><h1>Rider</h1><p class="muted">${esc(p.name)} • ${p.age} år • ${p.profile}</p></div></div>
- <div class="grid g3">${Object.entries(STAT_GROUPS).map(([g,keys])=>`<div class="card"><h2>${g}</h2>${keys.map(k=>`<div class="section-space"><div class="row"><span>${STAT_LABELS[k]}</span><strong>${p.stats[k]}</strong></div><div class="barline"><div class="progress"><i style="width:${p.stats[k]}%"></i></div><span class="smalltext muted">Pot. ${p.potential[k]}</span></div></div>`).join("")}</div>`).join("")}</div>
- <div class="grid g2 section-space"><div class="card"><h2>Udvikling</h2><p class="muted">Potentiale er synligt, men det er ikke en garanti.</p>${Object.entries(p.development).slice(0,8).map(([k,v])=>`<div class="row section-space"><span>${STAT_LABELS[k]}</span><span class="pill">${v}</span></div>`).join("")}</div>
- <div class="card"><h2>Condition</h2>${metric("Form",state.form,"%")}${metric("Energy",state.energy,"%")}${metric("Fatigue",state.fatigue,"%")}<p class="muted">Form, energy og fatigue er separate fra dine permanente stats.</p></div></div>`;
+
+function goToDashboard() {
+    if (!game.player) {
+        console.warn("Cannot open dashboard without a player.");
+        return;
+    }
+
+    changeScreen("dashboard");
 }
-function calendarPage(){
- return `<div class="page-title"><div><h1>Calendar</h1><p class="muted">Vælg hvor du vil forsøge at få en plads.</p></div></div>
- <div class="card"><table class="table"><thead><tr><th>Måned</th><th>Løb</th><th>Type</th><th>Terrain</th><th>Mål</th><th></th></tr></thead><tbody>${RACES.map(r=>`<tr><td>${r.month}</td><td><strong>${r.name}</strong><div class="race-tag">${r.country}</div></td><td>${r.type}</td><td>${r.terrain}</td><td>${r.goal}</td><td><button class="btn small" onclick="raceWish('${r.id}')">Ønsk</button></td></tr>`).join("")}</tbody></table></div>`;
+
+function goToRider() {
+    if (!game.player) {
+        console.warn("Cannot open rider screen without a player.");
+        return;
+    }
+
+    changeScreen("rider");
 }
-function teamPage(){
- const t=team();
- return `<div class="page-title"><div><h1>${esc(t.name)}</h1><p class="muted">${t.level} • ${t.country} • ${t.style}</p></div></div>
- <div class="grid g3"><div class="card"><h2>Din rolle</h2><div class="big">${state.contract.role}</div><p class="muted">Hierarkiet kan ændre sig gennem resultater og relationer.</p></div><div class="card"><h2>Holdets mål</h2><p>${t.objective}</p><p class="muted">Budgetniveau ${t.budget}/40</p></div><div class="card"><h2>Relationer</h2><p>Sportsdirektør <span class="pill">Neutral</span></p><p>Captain <span class="pill">Neutral</span></p><p>Coach <span class="pill">Good</span></p></div></div>
- <div class="grid g2 section-space"><div class="card"><h2>Ryttere</h2><div class="list">${RIDERS.filter(r=>r.team===t.name).map(r=>`<div class="list-item row"><span>${r.name}</span><span class="muted">${r.profile}</span></div>`).join("")||`<div class="list-item">Dit hold har endnu ikke fået en komplet roster i V1.</div>`}</div></div><div class="card"><h2>Team news</h2><div class="list"><div class="list-item">Pre-season camp planlagt.</div><div class="list-item">Sportsdirektøren vurderer roller før de første løb.</div></div></div></div>`;
+
+function goToCalendar() {
+    if (!game.player) {
+        console.warn("Cannot open calendar without a player.");
+        return;
+    }
+
+    changeScreen("calendar");
 }
-function inboxPage(){
- return `<div class="page-title"><div><h1>Inbox</h1><p class="muted">Beskeder fra holdet, agenten og cykelverdenen.</p></div></div><div class="list">${state.inbox.length?state.inbox.map(m=>`<div class="list-item ${m.priority==="ACTION REQUIRED"?"danger-box":m.priority==="IMPORTANT"?"warning":""}" onclick="readMessage(${m.id})"><div class="row"><strong>${esc(m.subject)}</strong><span class="pill">${m.priority}</span></div><div class="muted smalltext">${m.type} • ${m.date}</div><p>${esc(m.body)}</p>${m.action?`<button class="btn small" onclick="event.stopPropagation();${m.action}">Åbn</button>`:""}</div>`).join(""):`<div class="card">Inbox er tom.</div>`}</div>`;
+
+function goToTeam() {
+    if (!game.team) {
+        console.warn("Cannot open team screen without a team.");
+        return;
+    }
+
+    changeScreen("team");
 }
-function readMessage(id){const m=state.inbox.find(x=>x.id===id);if(m){m.read=true;save();render()}}
-function worldPage(){
- const sorted=[...RIDERS].sort((a,b)=>Object.values(b.stats).reduce((x,y)=>x+y,0)-Object.values(a.stats).reduce((x,y)=>x+y,0));
- return `<div class="page-title"><div><h1>World</h1><p class="muted">Verden fortsætter, også når du ikke kører.</p></div></div>
- <div class="grid g2"><div class="card"><h2>World news</h2><div class="list"><div class="list-item">2026-sæsonen er i gang.</div><div class="list-item">Holdene vurderer unge ryttere før forårets løb.</div><div class="list-item">Transfermarkedet åbner senere på sæsonen.</div></div></div><div class="card"><h2>Ryttere at holde øje med</h2><table class="table"><thead><tr><th>Rytter</th><th>Hold</th><th>Profil</th></tr></thead><tbody>${sorted.slice(0,8).map(r=>`<tr><td>${r.name}</td><td>${r.team}</td><td>${r.profile}</td></tr>`).join("")}</tbody></table></div></div>
- <div class="card section-space"><h2>Simulation</h2><p class="muted">Når du fortsætter, udvikler verden sig i baggrunden: form, resultater, transfers og nye talenter kan ændre din situation.</p><button class="btn primary" onclick="simulateWorld()">Simulér verden</button></div>`;
+
+function goToInbox() {
+    changeScreen("inbox");
 }
-function careerPage(){
- return `<div class="page-title"><div><h1>Career</h1><p class="muted">Din historie bliver samlet her.</p></div></div>
- <div class="grid g4">${metric("Wins",state.history.filter(x=>x.result==="1. plads").length,"")}${metric("Podiums",state.history.filter(x=>["1. plads","2. plads","3. plads"].includes(x.result)).length,"")}${metric("Race days",state.history.length,"")}${metric("Experience",state.experience,"")}</div>
- <div class="card section-space"><h2>Timeline</h2><div class="timeline">${state.history.length?state.history.map(h=>`<div class="timeline-item"><strong>${h.race}</strong><div class="muted">${h.date} • ${h.result}</div><p>${h.note}</p></div>`).join(""):`<p class="muted">Din karriere har ikke fået sit første resultat endnu.</p>`}</div></div>`;
+
+function goToWorld() {
+    changeScreen("world");
 }
-function contractPage(){
- const t=team();
- return `<div class="page-title"><div><h1>Contract & Economy</h1><p class="muted">Økonomien skal støtte karrieren, ikke blive et separat finansspil.</p></div></div>
- <div class="grid g3"><div class="card"><h2>Kontrakt</h2><p><span class="muted">Hold</span><br>${t.name}</p><p><span class="muted">Rolle</span><br>${state.contract.role}</p><p><span class="muted">Løn</span><br><strong>${money(state.contract.salary)}/md.</strong></p><p><span class="muted">Periode</span><br>${state.contract.start} → ${state.contract.end}</p></div>
- <div class="card"><h2>Agent</h2>${state.agent?`<p><strong>${state.agent.name}</strong></p><p class="muted">${state.agent.specialization} • ${state.agent.personality}</p><span class="pill">Relation: ${state.agent.relationship}</span>`:`<p>Du har ingen agent.</p><button class="btn primary" onclick="hireAgent()">Find agent</button>`}</div>
- <div class="card"><h2>Team economy</h2><p>Budgetniveau: <strong>${t.budget}/40</strong></p><div class="progress"><i style="width:${t.budget/40*100}%"></i></div><p class="muted">Budget påvirker ressourcer, staff og muligheder over tid — men penge alene afgør ikke resultater.</p></div></div>
- <div class="card section-space"><h2>Transfer opportunities</h2><p class="muted">Senere i karrieren kan andre hold kontakte dig. Tilbud vurderes på løn, rolle, race access, udvikling og team situation.</p><button class="btn" onclick="toast('Ingen konkrete tilbud endnu')">Tjek markedet</button></div>`;
+
+function goToCareer() {
+    if (!game.player) {
+        console.warn("Cannot open career screen without a player.");
+        return;
+    }
+
+    changeScreen("career");
 }
-function hireAgent(){state.agent={name:["Marco Rossi","Thomas Jensen","Alex Martin"][Math.floor(Math.random()*3)],specialization:["Relations-focused","Negotiation-focused","Career-development-focused","International"][Math.floor(Math.random()*4)],personality:["Patient","Aggressive","Balanced"][Math.floor(Math.random()*3)],relationship:"Neutral",fee:.05};addInbox("Ny agent","Agent",`Din nye agent ${state.agent.name} følger nu din karriere.`,"IMPORTANT");save();render()}
-function settingsPage(){
- return `<div class="page-title"><div><h1>Settings</h1><p class="muted">V1-indstillinger.</p></div></div><div class="grid g2"><div class="card"><h2>Game</h2><p>Difficulty: Realistic</p><p>World simulation: Active</p><p>Autosave: <span class="green">On</span></p></div><div class="card"><h2>Save</h2><button class="btn" onclick="save();toast('Career gemt')">Gem nu</button><button class="btn danger" onclick="resetGame()">Slet career</button></div></div>`;
+
+function goToContract() {
+    changeScreen("contract");
 }
-function screenContent(){
- switch(state.screen){case"dashboard":return dashboard();case"rider":return riderPage();case"calendar":return calendarPage();case"team":return teamPage();case"inbox":return inboxPage();case"world":return worldPage();case"career":return careerPage();case"contract":return contractPage();case"settings":return settingsPage();default:return dashboard()}
+
+function goToSettings() {
+    changeScreen("settings");
 }
-function raceWish(id){const r=RACES.find(x=>x.id===id);addInbox("Race wish: "+r.name,"Sports Director",`Du har ønsket ${r.name}. Sportsdirektøren vil vurdere form, rolle, andre ryttere og holdets mål.`,"ACTION REQUIRED");save();toast("Race wish sendt")}
-function startRace(id){
- const r=RACES.find(x=>x.id===id);state.selectedRace=r;state.race={km:0,total:Math.max(80,r.days*120),position:48,group:"Main peloton",energy:state.energy,fatigue:state.fatigue,phase:"mid"};
- state.screen="race";save();render();
+
+function goToRace() {
+    if (!game.currentRace) {
+        console.warn("Cannot enter race mode without a race.");
+        return;
+    }
+
+    changeScreen("race");
 }
-function raceScreen(){
- const r=state.selectedRace,q=state.race;
- if(q.phase==="result")return raceResult();
- const progress=Math.min(100,q.km/q.total*100);
- const situations=[
- ["Hold position","Du ligger godt placeret og kan spare kræfter."],
- ["Move forward","Du kan bruge lidt energi på at komme frem."],
- ["Follow wheel","En stærk rytter bevæger sig frem foran dig."],
- ["Save energy","Du kan falde lidt tilbage og beskytte din energi."],
- ["Pull","Holdet har brug for hjælp i fronten."],
- ["Attack","Der åbner sig et hul på vejen."]
- ];
- const s=situations[(Math.floor(q.km/20)+state.worldTick)%situations.length];
- return `<div class="race-mode"><div class="race-head"><div><span class="pill">${r.name}</span><h1>${r.terrain}</h1></div><div class="race-km">${Math.round(q.km)} <span class="smalltext">/ ${q.total} km</span></div></div>
- <div class="grid g4 section-space">${metric("Position",q.position,"")}${metric("Energy",q.energy,"%")}${metric("Fatigue",q.fatigue,"%")}${metric("Form",state.form,"%")}</div>
- <div class="card section-space"><h2>Situation</h2><p><strong>${s[0]}</strong> — ${s[1]}</p><div class="notice">Gruppe: ${q.group}. Race IQ, positioning, terrain stats, form og energi påvirker dine muligheder.</div>
- <div class="grid g2 section-space">${situations.slice(0,4).map(x=>`<button class="race-choice" onclick="raceAction('${x[0]}')"><strong>${x[0]}</strong><br><span class="muted">${x[1]}</span></button>`).join("")}</div></div>
- <div class="actions section-space"><button class="btn" onclick="raceAction('Wait')">Vent og simuler videre</button><button class="btn danger" onclick="abandonRace()">Abandon</button></div></div>`;
+
+function returnToDashboard() {
+    if (game.player) {
+        changeScreen("dashboard");
+    } else {
+        changeScreen("start");
+    }
 }
-function raceAction(action){
- const q=state.race,p=state.player;
- let cost={ "Hold position":2,"Move forward":5,"Follow wheel":4,"Save energy":-3,"Pull":7,"Attack":10,"Wait":1}[action]??3;
- q.energy=Math.max(0,Math.min(100,q.energy-cost));
- q.fatigue=Math.max(0,Math.min(100,q.fatigue+(cost>0?cost*.35:-1)));
- if(action==="Move forward"||action==="Follow wheel")q.position=Math.max(5,q.position-4-Math.floor(p.stats.positioning/30));
- if(action==="Attack"){q.position=Math.max(1,q.position-10);q.group="Front group"}
- if(action==="Save energy")q.position=Math.min(80,q.position+3);
- q.km+=Math.min(18,q.total-q.km);
- if(q.energy<=5||q.km>=q.total){q.phase="result"}
- state.experience+=1;state.energy=q.energy;state.fatigue=q.fatigue;save();render();
+
+function getAvailableNavigation() {
+    if (!game.player) {
+        return [
+            "start",
+            "create-rider",
+            "offers"
+        ];
+    }
+
+    return [
+        "dashboard",
+        "rider",
+        "calendar",
+        "team",
+        "inbox",
+        "world",
+        "career",
+        "contract",
+        "settings"
+    ];
 }
-function raceResult(){
- const r=state.selectedRace,q=state.race,p=state.player;
- const strength=(p.stats.endurance+p.stats.raceIQ+p.stats.positioning+p.stats.technique)/4;
- let pos=Math.max(1,Math.min(60,Math.round(q.position+(55-strength)/3+(Math.random()*9-4))));
- const result=pos===1?"1. plads":pos===2?"2. plads":pos===3?"3. plads":`${pos}. plads`;
- state.history.unshift({race:r.name,date:state.currentDate,result,note:`Du gennemførte løbet med ${Math.round(q.energy)}% energy og ${Math.round(q.fatigue)}% fatigue.`});
- developFromRace(r);
- return `<div class="screen-center"><div class="start-card"><div class="pill">Race complete</div><h1>${r.name}</h1><div class="big">${result}</div><p>${r.terrain}</p><div class="grid g2 section-space"><div class="card"><div class="muted">Energy</div><strong>${Math.round(q.energy)}%</strong></div><div class="card"><div class="muted">Fatigue</div><strong>${Math.round(q.fatigue)}%</strong></div></div><button class="btn primary" onclick="finishRace()">Tilbage til karrieren</button></div></div>`;
+
+function canNavigateTo(screen) {
+    return getAvailableNavigation().includes(screen);
 }
-function developFromRace(r){
- const p=state.player;
- let keys=r.terrain.includes("Mountain")?["mountain","mediumMountain","recovery"]:r.terrain.includes("Cobble")?["cobblestones","technique","positioning"]:r.type==="Worlds"?["raceIQ","mentality"]:["endurance","raceIQ"];
- keys.forEach(k=>{if(p.stats[k]<p.potential[k]&&Math.random()<.45)p.stats[k]+=1});
- state.form=Math.max(50,Math.min(100,state.form+Math.floor(Math.random()*9)-3));
+
+function navigateTo(screen) {
+    if (!canNavigateTo(screen)) {
+        console.warn(`Navigation blocked: ${screen}`);
+        return;
+    }
+
+    changeScreen(screen);
 }
-function finishRace(){state.energy=Math.max(55,state.energy);state.fatigue=Math.max(5,state.fatigue-18);state.currentDate=advanceDate(state.currentDate,2);state.screen="dashboard";save();render()}
-function abandonRace(){state.history.unshift({race:state.selectedRace.name,date:state.currentDate,result:"Abandon",note:"Du forlod løbet."});state.screen="dashboard";save();render()}
-function advanceDate(d,days){let x=new Date(d+"T12:00:00");x.setDate(x.getDate()+days);return x.toISOString().slice(0,10)}
-function simulateWorld(){
- state.worldTick++;state.currentDate=advanceDate(state.currentDate,Math.floor(Math.random()*8)+3);
- state.energy=Math.min(100,state.energy+20);state.fatigue=Math.max(0,state.fatigue-10);state.form=Math.max(50,Math.min(100,state.form+Math.floor(Math.random()*7)-2));
- if(Math.random()<.35)addInbox("World update","Cycling World","Et nyt resultat, en transfer eller en ung rytter er på vej ind i systemet.","INFO");
- save();toast("Verden er simuleret frem");render();
+
+function getScreenTitle(screen = game.currentScreen) {
+    const titles = {
+        start: "Cycling Career",
+        "create-rider": "Create Rider",
+        offers: "Team Offers",
+        dashboard: "Dashboard",
+        rider: "Rider",
+        calendar: "Calendar",
+        team: "Team",
+        inbox: "Inbox",
+        world: "World",
+        career: "Career",
+        contract: "Contract",
+        settings: "Settings",
+        race: "Race"
+    };
+
+    return titles[screen] || "Cycling Career";
 }
-function continueCareer(){
- if(!state.player){setScreen("create");return}
- const next=nextRace();
- if(next&&Number(state.currentDate.slice(5,7))<=next.month){simulateWorld()}else{state.currentDate=advanceDate(state.currentDate,14);simulateWorld()}
+
+function getScreenDescription(screen = game.currentScreen) {
+    const descriptions = {
+        start: "Build your cycling career.",
+        "create-rider": "Create your rider and begin your journey.",
+        offers: "Choose where your professional career begins.",
+        dashboard: "Your current career at a glance.",
+        rider: "Your rider, attributes and development.",
+        calendar: "Your season, races and opportunities.",
+        team: "Your team, teammates and staff.",
+        inbox: "Messages and important career decisions.",
+        world: "The cycling world around your career.",
+        career: "Your results, records and career history.",
+        contract: "Your contract, role and opportunities.",
+        settings: "Game and career settings.",
+        race: "Race simulation."
+    };
+
+    return descriptions[screen] || "";
 }
-function resetGame(){if(confirm("Slet denne career?")){localStorage.removeItem(APP_KEY);state=loadState();render()}}
-render();
+
+function getNavigationItems() {
+    return [
+        {
+            id: "dashboard",
+            label: "Dashboard",
+            screen: "dashboard"
+        },
+        {
+            id: "rider",
+            label: "Rider",
+            screen: "rider"
+        },
+        {
+            id: "calendar",
+            label: "Calendar",
+            screen: "calendar"
+        },
+        {
+            id: "team",
+            label: "Team",
+            screen: "team"
+        },
+        {
+            id: "inbox",
+            label: "Inbox",
+            screen: "inbox"
+        },
+        {
+            id: "world",
+            label: "World",
+            screen: "world"
+        },
+        {
+            id: "career",
+            label: "Career",
+            screen: "career"
+        },
+        {
+            id: "contract",
+            label: "Contract",
+            screen: "contract"
+        },
+        {
+            id: "settings",
+            label: "Settings",
+            screen: "settings"
+        }
+    ];
+}
+
+function getActiveNavigationItem() {
+    return getNavigationItems().find(
+        item => item.screen === game.currentScreen
+    ) || null;
+}
+
+console.log("Screen system loaded.");
+// ============================================
+// CYCLING CAREER
+// script.js — Del 3
+// Rider Generator
+// ============================================
+
+const riderProfiles = {
+    quick: {
+        name: "Quick",
+        description: "A rider with strong speed and acceleration.",
+        tendencies: {
+            sprint: 7,
+            acceleration: 7,
+            endurance: 4,
+            recovery: 4,
+            flat: 6,
+            hill: 5,
+            mediumMountain: 3,
+            mountain: 2,
+            cobblestones: 5,
+            itt: 4,
+            positioning: 6,
+            raceIQ: 5,
+            technique: 6,
+            mentality: 5,
+            teamwork: 5
+        }
+    },
+
+    climber: {
+        name: "Climber",
+        description: "A rider who naturally performs well in the mountains.",
+        tendencies: {
+            sprint: 3,
+            acceleration: 4,
+            endurance: 7,
+            recovery: 7,
+            flat: 3,
+            hill: 5,
+            mediumMountain: 7,
+            mountain: 8,
+            cobblestones: 2,
+            itt: 4,
+            positioning: 5,
+            raceIQ: 6,
+            technique: 5,
+            mentality: 6,
+            teamwork: 5
+        }
+    },
+
+    classics: {
+        name: "Classics Rider",
+        description: "A versatile rider suited to hills, cobbles and hard one-day races.",
+        tendencies: {
+            sprint: 5,
+            acceleration: 7,
+            endurance: 7,
+            recovery: 5,
+            flat: 6,
+            hill: 8,
+            mediumMountain: 6,
+            mountain: 3,
+            cobblestones: 8,
+            itt: 4,
+            positioning: 7,
+            raceIQ: 7,
+            technique: 7,
+            mentality: 6,
+            teamwork: 5
+        }
+    },
+
+    timeTrialist: {
+        name: "Time Trialist",
+        description: "A rider with a natural strength in individual time trials.",
+        tendencies: {
+            sprint: 3,
+            acceleration: 3,
+            endurance: 8,
+            recovery: 5,
+            flat: 8,
+            hill: 5,
+            mediumMountain: 5,
+            mountain: 3,
+            cobblestones: 3,
+            itt: 9,
+            positioning: 4,
+            raceIQ: 6,
+            technique: 6,
+            mentality: 7,
+            teamwork: 4
+        }
+    },
+
+    allround: {
+        name: "Allround",
+        description: "A balanced rider without one clearly dominant specialty.",
+        tendencies: {
+            sprint: 5,
+            acceleration: 5,
+            endurance: 6,
+            recovery: 6,
+            flat: 6,
+            hill: 6,
+            mediumMountain: 5,
+            mountain: 5,
+            cobblestones: 5,
+            itt: 5,
+            positioning: 6,
+            raceIQ: 6,
+            technique: 6,
+            mentality: 6,
+            teamwork: 6
+        }
+    },
+
+    custom: {
+        name: "Own Profile",
+        description: "A completely individual rider profile.",
+        tendencies: {
+            sprint: 5,
+            acceleration: 5,
+            endurance: 5,
+            recovery: 5,
+            flat: 5,
+            hill: 5,
+            mediumMountain: 5,
+            mountain: 5,
+            cobblestones: 5,
+            itt: 5,
+            positioning: 5,
+            raceIQ: 5,
+            technique: 5,
+            mentality: 5,
+            teamwork: 5
+        }
+    }
+};
+
+const riderStatDefinitions = [
+    {
+        id: "sprint",
+        name: "Sprint",
+        category: "Physical"
+    },
+    {
+        id: "acceleration",
+        name: "Acceleration",
+        category: "Physical"
+    },
+    {
+        id: "endurance",
+        name: "Endurance",
+        category: "Physical"
+    },
+    {
+        id: "recovery",
+        name: "Recovery",
+        category: "Physical"
+    },
+    {
+        id: "flat",
+        name: "Flat",
+        category: "Terrain"
+    },
+    {
+        id: "hill",
+        name: "Hill",
+        category: "Terrain"
+    },
+    {
+        id: "mediumMountain",
+        name: "Medium Mountain",
+        category: "Terrain"
+    },
+    {
+        id: "mountain",
+        name: "Mountain",
+        category: "Terrain"
+    },
+    {
+        id: "cobblestones",
+        name: "Cobblestones",
+        category: "Terrain"
+    },
+    {
+        id: "itt",
+        name: "ITT",
+        category: "Terrain"
+    },
+    {
+        id: "positioning",
+        name: "Positioning",
+        category: "Race"
+    },
+    {
+        id: "raceIQ",
+        name: "Race IQ",
+        category: "Race"
+    },
+    {
+        id: "technique",
+        name: "Technique",
+        category: "Race"
+    },
+    {
+        id: "mentality",
+        name: "Mentality",
+        category: "Race"
+    },
+    {
+        id: "teamwork",
+        name: "Teamwork",
+        category: "Race"
+    }
+];
+
+function randomInt(min, max) {
+    return Math.floor(
+        Math.random() * (max - min + 1)
+    ) + min;
+}
+
+function clamp(value, min, max) {
+    return Math.max(
+        min,
+        Math.min(max, value)
+    );
+}
+
+function getRandomDevelopmentSpeed() {
+    const speeds = [
+        "Slow",
+        "Below Average",
+        "Average",
+        "Above Average",
+        "Fast"
+    ];
+
+    return speeds[
+        randomInt(0, speeds.length - 1)
+    ];
+}
+
+function getDevelopmentProfile(age) {
+    const profiles = [
+        "Early Developer",
+        "Balanced Developer",
+        "Late Developer"
+    ];
+
+    if (age === 16) {
+        return profiles[
+            randomInt(0, 2)
+        ];
+    }
+
+    if (age === 18) {
+        return profiles[
+            randomInt(1, 2)
+        ];
+    }
+
+    return "Balanced Developer";
+}
+
+function getPotentialRange(age) {
+    if (age === 16) {
+        return {
+            minimum: 70,
+            maximum: 88
+        };
+    }
+
+    if (age === 17) {
+        return {
+            minimum: 72,
+            maximum: 90
+        };
+    }
+
+    return {
+        minimum: 74,
+        maximum: 92
+    };
+}
+
+function generatePotential(age) {
+    const range = getPotentialRange(age);
+
+    return randomInt(
+        range.minimum,
+        range.maximum
+    );
+}
+
+function generateStatValue(tendency, age) {
+    const ageModifier = age === 16
+        ? -1
+        : age === 18
+            ? 1
+            : 0;
+
+    const variation = randomInt(-2, 2);
+
+    return clamp(
+        tendency + variation + ageModifier,
+        1,
+        85
+    );
+}
+
+function generateStats(profileKey, age) {
+    const profile =
+        riderProfiles[profileKey] ||
+        riderProfiles.allround;
+
+    const stats = {};
+
+    riderStatDefinitions.forEach(stat => {
+        const tendency =
+            profile.tendencies[stat.id] ?? 5;
+
+        stats[stat.id] =
+            generateStatValue(
+                tendency,
+                age
+            );
+    });
+
+    return stats;
+}
+
+function calculateCurrentLevel(stats) {
+    const values = Object.values(stats);
+
+    if (!values.length) {
+        return 0;
+    }
+
+    const total =
+        values.reduce(
+            (sum, value) => sum + value,
+            0
+        );
+
+    return Math.round(
+        total / values.length
+    );
+}
+
+function createRiderData({
+    name,
+    country,
+    age,
+    profile = "allround"
+} = {}) {
+
+    if (!name || !country || !age) {
+        console.error(
+            "Rider requires a name, country and age."
+        );
+
+        return null;
+    }
+
+    const stats =
+        generateStats(
+            profile,
+            age
+        );
+
+    const potential =
+        generatePotential(age);
+
+    const developmentSpeed =
+        getRandomDevelopmentSpeed();
+
+    const developmentProfile =
+        getDevelopmentProfile(age);
+
+    const currentLevel =
+        calculateCurrentLevel(stats);
+
+    return {
+        id: `player-${Date.now()}`,
+
+        name,
+        country,
+        age,
+
+        profile: {
+            key: profile,
+            name:
+                riderProfiles[profile]?.name ||
+                "Allround",
+            description:
+                riderProfiles[profile]?.description ||
+                riderProfiles.allround.description
+        },
+
+        stats,
+
+        potential: {
+            value: potential,
+            visible: true,
+            uncertainty: randomInt(1, 4)
+        },
+
+        development: {
+            speed: developmentSpeed,
+            profile: developmentProfile,
+            currentLevel,
+            recentTrend: "Stable"
+        },
+
+        experience: 0,
+
+        form: 75,
+        energy: 100,
+        fatigue: 0,
+
+        injuries: [],
+
+        career: {
+            races: 0,
+            wins: 0,
+            podiums: 0,
+            top10s: 0,
+            raceDays: 0
+        },
+
+        status: "Unsigned",
+
+        createdAt: game.career.currentDate
+    };
+}
+
+function generatePlayer({
+    name,
+    country,
+    age,
+    profile
+} = {}) {
+
+    const rider =
+        createRiderData({
+            name,
+            country,
+            age,
+            profile
+        });
+
+    if (!rider) {
+        return null;
+    }
+
+    game.player = rider;
+
+    console.log(
+        "Generated player:",
+        game.player
+    );
+
+    return rider;
+}
+
+function regeneratePlayer({
+    name,
+    country,
+    age,
+    profile
+} = {}) {
+
+    if (!game.player) {
+        console.warn(
+            "No existing player to regenerate."
+        );
+
+        return null;
+    }
+
+    return generatePlayer({
+        name:
+            name ||
+            game.player.name,
+
+        country:
+            country ||
+            game.player.country,
+
+        age:
+            age ||
+            game.player.age,
+
+        profile:
+            profile ||
+            game.player.profile.key
+    });
+}
+
+function getPlayerStat(statId) {
+    if (!game.player) {
+        return null;
+    }
+
+    return game.player.stats[statId] ?? null;
+}
+
+function getPlayerStatDefinition(statId) {
+    return riderStatDefinitions.find(
+        stat => stat.id === statId
+    ) || null;
+}
+
+function getPlayerPotential() {
+    if (!game.player) {
+        return null;
+    }
+
+    return game.player.potential.value;
+}
+
+function getPlayerLevel() {
+    if (!game.player) {
+        return null;
+    }
+
+    return game.player.development.currentLevel;
+}
+
+function getPlayerDevelopmentSummary() {
+    if (!game.player) {
+        return null;
+    }
+
+    return {
+        currentLevel:
+            game.player.development.currentLevel,
+
+        potential:
+            game.player.potential.value,
+
+        speed:
+            game.player.development.speed,
+
+        profile:
+            game.player.development.profile,
+
+        trend:
+            game.player.development.recentTrend
+    };
+}
+
+console.log("Rider Generator loaded.");
+// ============================================
+// CYCLING CAREER
+// script.js — Del 4
+// Rider Creation State
+// ============================================
+
+const riderCreation = {
+    name: "",
+    country: null,
+    age: null,
+
+    profile: null,
+
+    physicalTendency: "Balanced",
+    technicalTendency: "Balanced",
+
+    generated: false,
+    accepted: false
+};
+
+const validRiderAges = [16, 17, 18];
+
+const physicalTendencies = [
+    {
+        id: "physical",
+        name: "Physical",
+        description: "Slightly favors physical development."
+    },
+    {
+        id: "balanced",
+        name: "Balanced",
+        description: "Keeps physical and technical development balanced."
+    },
+    {
+        id: "technical",
+        name: "Technical",
+        description: "Slightly favors technical and race development."
+    }
+];
+
+function resetRiderCreation() {
+    riderCreation.name = "";
+    riderCreation.country = null;
+    riderCreation.age = null;
+
+    riderCreation.profile = null;
+
+    riderCreation.physicalTendency = "Balanced";
+    riderCreation.technicalTendency = "Balanced";
+
+    riderCreation.generated = false;
+    riderCreation.accepted = false;
+}
+
+function setRiderName(name) {
+    if (typeof name !== "string") {
+        console.warn("Invalid rider name.");
+        return false;
+    }
+
+    const cleanName = name.trim();
+
+    if (cleanName.length < 2) {
+        console.warn("Rider name is too short.");
+        return false;
+    }
+
+    if (cleanName.length > 40) {
+        console.warn("Rider name is too long.");
+        return false;
+    }
+
+    riderCreation.name = cleanName;
+
+    return true;
+}
+
+function setRiderCountry(country) {
+    if (!country) {
+        console.warn("No country selected.");
+        return false;
+    }
+
+    riderCreation.country = country;
+
+    return true;
+}
+
+function setRiderAge(age) {
+    const numericAge = Number(age);
+
+    if (!validRiderAges.includes(numericAge)) {
+        console.warn(
+            "Rider age must be 16, 17 or 18."
+        );
+
+        return false;
+    }
+
+    riderCreation.age = numericAge;
+
+    return true;
+}
+
+function setRiderProfile(profile) {
+    if (!riderProfiles[profile]) {
+        console.warn(
+            `Unknown rider profile: ${profile}`
+        );
+
+        return false;
+    }
+
+    riderCreation.profile = profile;
+
+    return true;
+}
+
+function setPhysicalTendency(tendency) {
+    const valid =
+        physicalTendencies.some(
+            item =>
+                item.name === tendency
+        );
+
+    if (!valid) {
+        console.warn(
+            `Unknown physical tendency: ${tendency}`
+        );
+
+        return false;
+    }
+
+    riderCreation.physicalTendency =
+        tendency;
+
+    return true;
+}
+
+function setTechnicalTendency(tendency) {
+    const valid =
+        physicalTendencies.some(
+            item =>
+                item.name === tendency
+        );
+
+    if (!valid) {
+        console.warn(
+            `Unknown technical tendency: ${tendency}`
+        );
+
+        return false;
+    }
+
+    riderCreation.technicalTendency =
+        tendency;
+
+    return true;
+}
+
+function getRiderCreationState() {
+    return {
+        ...riderCreation
+    };
+}
+
+function isRiderCreationComplete() {
+    return (
+        riderCreation.name.length >= 2 &&
+        riderCreation.country !== null &&
+        validRiderAges.includes(
+            riderCreation.age
+        ) &&
+        riderCreation.profile !== null
+    );
+}
+
+function validateRiderCreation() {
+    const errors = [];
+
+    if (!riderCreation.name) {
+        errors.push(
+            "A rider name is required."
+        );
+    }
+
+    if (!riderCreation.country) {
+        errors.push(
+            "A country must be selected."
+        );
+    }
+
+    if (!validRiderAges.includes(
+        riderCreation.age
+    )) {
+        errors.push(
+            "Age must be 16, 17 or 18."
+        );
+    }
+
+    if (!riderCreation.profile) {
+        errors.push(
+            "A rider profile must be selected."
+        );
+    }
+
+    return {
+        valid: errors.length === 0,
+        errors
+    };
+}
+
+function generateCreatedRider() {
+    const validation =
+        validateRiderCreation();
+
+    if (!validation.valid) {
+        console.warn(
+            "Rider creation is incomplete:",
+            validation.errors
+        );
+
+        return null;
+    }
+
+    const rider =
+        generatePlayer({
+            name: riderCreation.name,
+            country: riderCreation.country,
+            age: riderCreation.age,
+            profile: riderCreation.profile
+        });
+
+    if (!rider) {
+        return null;
+    }
+
+    riderCreation.generated = true;
+    riderCreation.accepted = false;
+
+    return rider;
+}
+
+function regenerateCreatedRider() {
+    if (!riderCreation.generated) {
+        console.warn(
+            "Generate the rider before regenerating."
+        );
+
+        return null;
+    }
+
+    return generateCreatedRider();
+}
+
+function acceptCreatedRider() {
+    if (!game.player) {
+        console.warn(
+            "No generated rider exists."
+        );
+
+        return false;
+    }
+
+    if (!riderCreation.generated) {
+        console.warn(
+            "Generate the rider before accepting."
+        );
+
+        return false;
+    }
+
+    riderCreation.accepted = true;
+
+    game.gameStarted = true;
+
+    return true;
+}
+
+function beginRiderCreation() {
+    resetRiderCreation();
+
+    game.player = null;
+    game.team = null;
+    game.contract = null;
+    game.agent = null;
+    game.currentRace = null;
+
+    changeScreen("create-rider");
+}
+
+function finishRiderCreation() {
+    if (!riderCreation.accepted) {
+        console.warn(
+            "Rider has not been accepted."
+        );
+
+        return false;
+    }
+
+    if (!game.player) {
+        console.warn(
+            "No player exists."
+        );
+
+        return false;
+    }
+
+    changeScreen("offers");
+
+    return true;
+}
+
+function getSelectedProfile() {
+    if (!riderCreation.profile) {
+        return null;
+    }
+
+    return riderProfiles[
+        riderCreation.profile
+    ];
+}
+
+function getAvailableRiderProfiles() {
+    return Object.entries(
+        riderProfiles
+    ).map(([id, profile]) => ({
+        id,
+        name: profile.name,
+        description: profile.description
+    }));
+}
+
+console.log(
+    "Rider Creation system loaded."
+);
+// ============================================
+// CYCLING CAREER
+// script.js — Del 5
+// Advanced Rider Stat Generation
+// ============================================
+
+const statGroups = {
+    physical: [
+        "sprint",
+        "acceleration",
+        "endurance",
+        "recovery"
+    ],
+
+    terrain: [
+        "flat",
+        "hill",
+        "mediumMountain",
+        "mountain",
+        "cobblestones",
+        "itt"
+    ],
+
+    technical: [
+        "positioning",
+        "raceIQ",
+        "technique",
+        "mentality",
+        "teamwork"
+    ]
+};
+
+const tendencyModifiers = {
+    Physical: {
+        physical: 1.2,
+        terrain: 0.2,
+        technical: -0.2
+    },
+
+    Balanced: {
+        physical: 0,
+        terrain: 0,
+        technical: 0
+    },
+
+    Technical: {
+        physical: -0.2,
+        terrain: 0.2,
+        technical: 1.2
+    }
+};
+
+function getStatGroup(statId) {
+    if (statGroups.physical.includes(statId)) {
+        return "physical";
+    }
+
+    if (statGroups.terrain.includes(statId)) {
+        return "terrain";
+    }
+
+    if (statGroups.technical.includes(statId)) {
+        return "technical";
+    }
+
+    return null;
+}
+
+function getTendencyModifier(statId) {
+    const group = getStatGroup(statId);
+
+    if (!group) {
+        return 0;
+    }
+
+    const physical =
+        tendencyModifiers[
+            riderCreation.physicalTendency
+        ] || tendencyModifiers.Balanced;
+
+    const technical =
+        tendencyModifiers[
+            riderCreation.technicalTendency
+        ] || tendencyModifiers.Balanced;
+
+    /*
+        Physical tendency primarily affects
+        physical stats.
+
+        Technical tendency primarily affects
+        race/technical stats.
+
+        Terrain stays comparatively neutral
+        so that the rider profile remains the
+        main influence there.
+    */
+
+    return (
+        physical[group] +
+        technical[group]
+    );
+}
+
+function getProfileTendency(
+    profileKey,
+    statId
+) {
+    const profile =
+        riderProfiles[profileKey] ||
+        riderProfiles.allround;
+
+    return profile.tendencies[statId] ?? 5;
+}
+
+function generateIndividualStat({
+    profileKey,
+    statId,
+    age
+}) {
+    const base =
+        getProfileTendency(
+            profileKey,
+            statId
+        );
+
+    const tendency =
+        getTendencyModifier(statId);
+
+    /*
+        Young riders should not have completely
+        polished stats.
+
+        Variation makes two riders with the same
+        profile different from each other.
+    */
+
+    const naturalVariation =
+        randomInt(-2, 2);
+
+    const developmentVariation =
+        Math.random() < 0.20
+            ? randomInt(-1, 1)
+            : 0;
+
+    /*
+        Age has only a small influence at creation.
+        We do not want 18-year-olds automatically
+        being much better than 16-year-olds.
+    */
+
+    let ageModifier = 0;
+
+    if (age === 16) {
+        ageModifier = -0.5;
+    }
+
+    if (age === 18) {
+        ageModifier = 0.5;
+    }
+
+    const rawValue =
+        base +
+        tendency +
+        naturalVariation +
+        developmentVariation +
+        ageModifier;
+
+    return clamp(
+        Math.round(rawValue),
+        1,
+        85
+    );
+}
+
+function generateAdvancedStats(
+    profileKey,
+    age
+) {
+    const stats = {};
+
+    riderStatDefinitions.forEach(stat => {
+        stats[stat.id] =
+            generateIndividualStat({
+                profileKey,
+                statId: stat.id,
+                age
+            });
+    });
+
+    return stats;
+}
+
+function calculatePhysicalLevel(stats) {
+    return calculateGroupLevel(
+        stats,
+        statGroups.physical
+    );
+}
+
+function calculateTerrainLevel(stats) {
+    return calculateGroupLevel(
+        stats,
+        statGroups.terrain
+    );
+}
+
+function calculateTechnicalLevel(stats) {
+    return calculateGroupLevel(
+        stats,
+        statGroups.technical
+    );
+}
+
+function calculateGroupLevel(
+    stats,
+    group
+) {
+    const values = group
+        .map(stat => stats[stat])
+        .filter(
+            value => typeof value === "number"
+        );
+
+    if (!values.length) {
+        return 0;
+    }
+
+    const total =
+        values.reduce(
+            (sum, value) => sum + value,
+            0
+        );
+
+    return Math.round(
+        total / values.length
+    );
+}
+
+function calculateCurrentLevelAdvanced(stats) {
+    const physical =
+        calculatePhysicalLevel(stats);
+
+    const terrain =
+        calculateTerrainLevel(stats);
+
+    const technical =
+        calculateTechnicalLevel(stats);
+
+    /*
+        All three areas contribute to the
+        overall level. This is not a hidden
+        "player rating"; it is simply useful
+        for displaying the general strength
+        of the rider.
+    */
+
+    return Math.round(
+        (
+            physical +
+            terrain +
+            technical
+        ) / 3
+    );
+}
+
+function getStrongestStats(stats, amount = 3) {
+    return Object.entries(stats)
+        .sort(
+            (a, b) => b[1] - a[1]
+        )
+        .slice(0, amount)
+        .map(([statId, value]) => ({
+            statId,
+            value,
+            definition:
+                getPlayerStatDefinition(statId)
+        }));
+}
+
+function getWeakestStats(stats, amount = 3) {
+    return Object.entries(stats)
+        .sort(
+            (a, b) => a[1] - b[1]
+        )
+        .slice(0, amount)
+        .map(([statId, value]) => ({
+            statId,
+            value,
+            definition:
+                getPlayerStatDefinition(statId)
+        }));
+}
+
+function getDevelopmentDescription(
+    developmentProfile
+) {
+    const descriptions = {
+        "Early Developer":
+            "Tends to develop earlier than average, but may reach a plateau sooner.",
+
+        "Balanced Developer":
+            "Tends to develop steadily across the career.",
+
+        "Late Developer":
+            "May develop more slowly early on and improve strongly later."
+    };
+
+    return (
+        descriptions[developmentProfile] ||
+        descriptions["Balanced Developer"]
+    );
+}
+
+function generateDevelopmentProfile(age) {
+    const profile =
+        getDevelopmentProfile(age);
+
+    const speed =
+        getRandomDevelopmentSpeed();
+
+    return {
+        profile,
+        speed,
+        description:
+            getDevelopmentDescription(profile),
+        recentTrend: "Stable"
+    };
+}
+
+function generateAdvancedPotential(age) {
+    const basePotential =
+        generatePotential(age);
+
+    /*
+        Potential is visible but not an absolute
+        promise. The uncertainty represents that
+        the displayed potential is an estimate.
+    */
+
+    const uncertainty =
+        randomInt(1, 4);
+
+    return {
+        value: basePotential,
+        minimum: Math.max(
+            1,
+            basePotential - uncertainty
+        ),
+        maximum: Math.min(
+            100,
+            basePotential + uncertainty
+        ),
+        visible: true,
+        uncertainty
+    };
+}
+
+function generateCompleteRiderData({
+    name,
+    country,
+    age,
+    profile
+}) {
+    if (
+        !name ||
+        !country ||
+        !validRiderAges.includes(
+            Number(age)
+        ) ||
+        !riderProfiles[profile]
+    ) {
+        console.error(
+            "Cannot generate rider: invalid creation data."
+        );
+
+        return null;
+    }
+
+    const numericAge =
+        Number(age);
+
+    const stats =
+        generateAdvancedStats(
+            profile,
+            numericAge
+        );
+
+    const potential =
+        generateAdvancedPotential(
+            numericAge
+        );
+
+    const development =
+        generateDevelopmentProfile(
+            numericAge
+        );
+
+    const currentLevel =
+        calculateCurrentLevelAdvanced(
+            stats
+        );
+
+    return {
+        id: `player-${Date.now()}`,
+
+        name,
+        country,
+        age: numericAge,
+
+        profile: {
+            key: profile,
+            name:
+                riderProfiles[profile].name,
+            description:
+                riderProfiles[profile].description
+        },
+
+        stats,
+
+        potential,
+
+        development: {
+            ...development,
+            currentLevel
+        },
+
+        experience: 0,
+
+        form: 75,
+        energy: 100,
+        fatigue: 0,
+
+        injuries: [],
+
+        career: {
+            races: 0,
+            wins: 0,
+            podiums: 0,
+            top10s: 0,
+            raceDays: 0
+        },
+
+        status: "Unsigned",
+
+        createdAt:
+            game.career.currentDate
+    };
+}
+
+function generateCreatedRider() {
+    const validation =
+        validateRiderCreation();
+
+    if (!validation.valid) {
+        console.warn(
+            "Rider creation is incomplete:",
+            validation.errors
+        );
+
+        return null;
+    }
+
+    const rider =
+        generateCompleteRiderData({
+            name:
+                riderCreation.name,
+
+            country:
+                riderCreation.country,
+
+            age:
+                riderCreation.age,
+
+            profile:
+                riderCreation.profile
+        });
+
+    if (!rider) {
+        return null;
+    }
+
+    game.player = rider;
+
+    riderCreation.generated = true;
+    riderCreation.accepted = false;
+
+    console.log(
+        "Generated rider:",
+        rider
+    );
+
+    return rider;
+}
+
+function regenerateCreatedRider() {
+    if (!riderCreation.generated) {
+        console.warn(
+            "Generate the rider before regenerating."
+        );
+
+        return null;
+    }
+
+    return generateCreatedRider();
+}
+
+function getRiderCreationPreview() {
+    if (!game.player) {
+        return null;
+    }
+
+    return {
+        name: game.player.name,
+        country: game.player.country,
+        age: game.player.age,
+
+        profile:
+            game.player.profile,
+
+        currentLevel:
+            game.player.development.currentLevel,
+
+        potential:
+            game.player.potential,
+
+        development:
+            game.player.development,
+
+        strongest:
+            getStrongestStats(
+                game.player.stats
+            ),
+
+        weakest:
+            getWeakestStats(
+                game.player.stats
+            ),
+
+        stats:
+            game.player.stats
+    };
+}
+
+console.log(
+    "Advanced Rider Stat Generator loaded."
+);
+// ============================================
+// CYCLING CAREER
+// script.js — Del 6
+// Rider Creation Flow
+// ============================================
+
+const riderCreationOptions = {
+    ages: [16, 17, 18],
+
+    profiles: [
+        "quick",
+        "climber",
+        "classics",
+        "timeTrialist",
+        "allround",
+        "custom"
+    ],
+
+    tendencies: [
+        "Physical",
+        "Balanced",
+        "Technical"
+    ]
+};
+
+function setDevelopmentTendency(tendency) {
+    const valid =
+        riderCreationOptions.tendencies.includes(
+            tendency
+        );
+
+    if (!valid) {
+        console.warn(
+            `Unknown development tendency: ${tendency}`
+        );
+
+        return false;
+    }
+
+    riderCreation.developmentTendency =
+        tendency;
+
+    return true;
+}
+
+function getDevelopmentTendency() {
+    return (
+        riderCreation.developmentTendency ||
+        "Balanced"
+    );
+}
+
+function setCreationValue(type, value) {
+    switch (type) {
+        case "name":
+            return setRiderName(value);
+
+        case "country":
+            return setRiderCountry(value);
+
+        case "age":
+            return setRiderAge(value);
+
+        case "profile":
+            return setRiderProfile(value);
+
+        case "tendency":
+            return setDevelopmentTendency(value);
+
+        default:
+            console.warn(
+                `Unknown creation value: ${type}`
+            );
+
+            return false;
+    }
+}
+
+function getCreationOptions() {
+    return {
+        ages:
+            riderCreationOptions.ages,
+
+        profiles:
+            getAvailableRiderProfiles(),
+
+        tendencies:
+            riderCreationOptions.tendencies
+    };
+}
+
+function getCreationProgress() {
+    let completed = 0;
+    const total = 5;
+
+    if (riderCreation.name) {
+        completed++;
+    }
+
+    if (riderCreation.country) {
+        completed++;
+    }
+
+    if (riderCreation.age) {
+        completed++;
+    }
+
+    if (riderCreation.profile) {
+        completed++;
+    }
+
+    if (
+        riderCreation.developmentTendency
+    ) {
+        completed++;
+    }
+
+    return {
+        completed,
+        total,
+        percentage:
+            Math.round(
+                (completed / total) * 100
+            )
+    };
+}
+
+function getCreationMissingFields() {
+    const missing = [];
+
+    if (!riderCreation.name) {
+        missing.push("name");
+    }
+
+    if (!riderCreation.country) {
+        missing.push("country");
+    }
+
+    if (!riderCreation.age) {
+        missing.push("age");
+    }
+
+    if (!riderCreation.profile) {
+        missing.push("profile");
+    }
+
+    if (
+        !riderCreation.developmentTendency
+    ) {
+        missing.push("developmentTendency");
+    }
+
+    return missing;
+}
+
+function validateCompleteCreation() {
+    const missing =
+        getCreationMissingFields();
+
+    return {
+        valid: missing.length === 0,
+        missing
+    };
+}
+
+function prepareRiderGeneration() {
+    const validation =
+        validateCompleteCreation();
+
+    if (!validation.valid) {
+        console.warn(
+            "Rider creation is incomplete.",
+            validation.missing
+        );
+
+        return {
+            success: false,
+            missing: validation.missing
+        };
+    }
+
+    /*
+        The tendency is used when generating
+        the rider's initial stats.
+    */
+
+    return {
+        success: true,
+        data: {
+            name:
+                riderCreation.name,
+
+            country:
+                riderCreation.country,
+
+            age:
+                riderCreation.age,
+
+            profile:
+                riderCreation.profile,
+
+            developmentTendency:
+                riderCreation.developmentTendency
+        }
+    };
+}
+
+function generateRiderFromCreation() {
+    const preparation =
+        prepareRiderGeneration();
+
+    if (!preparation.success) {
+        return null;
+    }
+
+    const rider =
+        generateCompleteRiderData({
+            name:
+                preparation.data.name,
+
+            country:
+                preparation.data.country,
+
+            age:
+                preparation.data.age,
+
+            profile:
+                preparation.data.profile
+        });
+
+    if (!rider) {
+        return null;
+    }
+
+    /*
+        Store the chosen tendency on the rider.
+        The actual stat influence will be handled
+        by the stat-development system.
+    */
+
+    rider.development.tendency =
+        preparation.data.developmentTendency;
+
+    game.player = rider;
+
+    riderCreation.generated = true;
+    riderCreation.accepted = false;
+
+    return rider;
+}
+
+function regenerateRiderFromCreation() {
+    if (!riderCreation.generated) {
+        console.warn(
+            "No rider has been generated yet."
+        );
+
+        return null;
+    }
+
+    return generateRiderFromCreation();
+}
+
+function acceptGeneratedRider() {
+    if (!game.player) {
+        console.warn(
+            "No generated rider exists."
+        );
+
+        return false;
+    }
+
+    if (!riderCreation.generated) {
+        console.warn(
+            "Generate a rider first."
+        );
+
+        return false;
+    }
+
+    riderCreation.accepted = true;
+
+    game.gameStarted = true;
+
+    return true;
+}
+
+function getGeneratedRider() {
+    if (!riderCreation.generated) {
+        return null;
+    }
+
+    return game.player;
+}
+
+function getCreationSummary() {
+    return {
+        name:
+            riderCreation.name || "Not selected",
+
+        country:
+            riderCreation.country || "Not selected",
+
+        age:
+            riderCreation.age || "Not selected",
+
+        profile:
+            riderCreation.profile
+                ? riderProfiles[
+                    riderCreation.profile
+                ].name
+                : "Not selected",
+
+        developmentTendency:
+            riderCreation.developmentTendency ||
+            "Not selected",
+
+        progress:
+            getCreationProgress(),
+
+        generated:
+            riderCreation.generated,
+
+        accepted:
+            riderCreation.accepted
+    };
+}
+
+function canGenerateRider() {
+    return validateCompleteCreation().valid;
+}
+
+function canAcceptRider() {
+    return (
+        riderCreation.generated &&
+        !!game.player
+    );
+}
+
+function canContinueFromCreation() {
+    return (
+        riderCreation.accepted &&
+        !!game.player
+    );
+}
+
+/*
+    Override the old reset function so the new
+    development tendency is always reset too.
+*/
+
+function resetRiderCreationState() {
+    riderCreation.name = "";
+    riderCreation.country = null;
+    riderCreation.age = null;
+    riderCreation.profile = null;
+
+    riderCreation.developmentTendency =
+        null;
+
+    riderCreation.generated = false;
+    riderCreation.accepted = false;
+}
+
+console.log(
+    "Rider Creation Flow loaded."
+);
+// ============================================
+// CYCLING CAREER
+// script.js — Del 7
+// Team Offers System
+// ============================================
+
+const teamOfferState = {
+    offers: [],
+    selectedOfferId: null,
+    decisionMade: false
+};
+
+const offerTypes = {
+    development: {
+        name: "Development",
+        description:
+            "A team focused on giving young riders experience and development opportunities."
+    },
+
+    opportunity: {
+        name: "Opportunity",
+        description:
+            "A team where a young rider may receive more responsibility early in the career."
+    },
+
+    competition: {
+        name: "Competition",
+        description:
+            "A stronger team with more competition for race selection and roles."
+    }
+};
+
+function resetTeamOffers() {
+    teamOfferState.offers = [];
+    teamOfferState.selectedOfferId = null;
+    teamOfferState.decisionMade = false;
+}
+
+function createTeamOffer({
+    teamId,
+    teamName,
+    teamLevel,
+    role,
+    salary,
+    raceAccess,
+    development,
+    leadership,
+    offerType = "development"
+}) {
+    return {
+        id: `offer-${teamId}-${Date.now()}-${randomInt(100, 999)}`,
+
+        teamId,
+        teamName,
+        teamLevel,
+
+        role,
+
+        salary,
+
+        raceAccess,
+
+        development,
+
+        leadership,
+
+        offerType,
+
+        status: "Pending",
+
+        createdAt:
+            game.career.currentDate
+    };
+}
+
+function calculateOfferScore(offer) {
+    const roleScore =
+        getRoleScore(offer.role);
+
+    const developmentScore =
+        getOfferValueScore(
+            offer.development
+        );
+
+    const raceAccessScore =
+        getOfferValueScore(
+            offer.raceAccess
+        );
+
+    const leadershipScore =
+        getOfferValueScore(
+            offer.leadership
+        );
+
+    return Math.round(
+        (
+            roleScore +
+            developmentScore +
+            raceAccessScore +
+            leadershipScore
+        ) / 4
+    );
+}
+
+function getRoleScore(role) {
+    const scores = {
+        "Development rider": 55,
+        "Domestique": 60,
+        "Important rider": 72,
+        "Secondary leader": 82,
+        "Co-leader": 91,
+        "Captain": 100
+    };
+
+    return scores[role] ?? 50;
+}
+
+function getOfferValueScore(value) {
+    if (typeof value === "number") {
+        return clamp(value, 0, 100);
+    }
+
+    if (typeof value !== "string") {
+        return 50;
+    }
+
+    const normalized =
+        value.toLowerCase();
+
+    if (
+        normalized.includes("excellent") ||
+        normalized.includes("very high")
+    ) {
+        return 90;
+    }
+
+    if (
+        normalized.includes("high") ||
+        normalized.includes("strong")
+    ) {
+        return 75;
+    }
+
+    if (
+        normalized.includes("medium") ||
+        normalized.includes("average")
+    ) {
+        return 55;
+    }
+
+    if (
+        normalized.includes("low") ||
+        normalized.includes("limited")
+    ) {
+        return 35;
+    }
+
+    return 50;
+}
+
+function sortTeamOffers() {
+    teamOfferState.offers.sort(
+        (a, b) =>
+            calculateOfferScore(b) -
+            calculateOfferScore(a)
+    );
+}
+
+function addTeamOffer(offer) {
+    if (!offer || !offer.id) {
+        console.warn(
+            "Invalid team offer."
+        );
+
+        return false;
+    }
+
+    teamOfferState.offers.push(offer);
+
+    sortTeamOffers();
+
+    return true;
+}
+
+function getTeamOffers() {
+    return teamOfferState.offers;
+}
+
+function getTeamOfferById(offerId) {
+    return teamOfferState.offers.find(
+        offer =>
+            offer.id === offerId
+    ) || null;
+}
+
+function selectTeamOffer(offerId) {
+    const offer =
+        getTeamOfferById(offerId);
+
+    if (!offer) {
+        console.warn(
+            `Team offer not found: ${offerId}`
+        );
+
+        return false;
+    }
+
+    if (teamOfferState.decisionMade) {
+        console.warn(
+            "A team decision has already been made."
+        );
+
+        return false;
+    }
+
+    teamOfferState.selectedOfferId =
+        offerId;
+
+    return true;
+}
+
+function getSelectedTeamOffer() {
+    if (
+        !teamOfferState.selectedOfferId
+    ) {
+        return null;
+    }
+
+    return getTeamOfferById(
+        teamOfferState.selectedOfferId
+    );
+}
+
+function generateTeamOffers() {
+    if (!game.player) {
+        console.warn(
+            "Cannot generate offers without a player."
+        );
+
+        return [];
+    }
+
+    resetTeamOffers();
+
+    /*
+        Temporary offers.
+
+        These are placeholders for the real
+        team database that will later live in
+        data/teams.js.
+
+        The offer system itself does not depend
+        on fictional team names.
+    */
+
+    const offers = [
+        createTeamOffer({
+            teamId: "development-placeholder",
+            teamName: "Development Team",
+            teamLevel: "Continental",
+            role: "Development rider",
+            salary: 12000,
+            raceAccess: 55,
+            development: 85,
+            leadership: 45,
+            offerType: "development"
+        }),
+
+        createTeamOffer({
+            teamId: "opportunity-placeholder",
+            teamName: "Opportunity Team",
+            teamLevel: "ProTeam",
+            role: "Important rider",
+            salary: 18000,
+            raceAccess: 70,
+            development: 72,
+            leadership: 70,
+            offerType: "opportunity"
+        }),
+
+        createTeamOffer({
+            teamId: "competition-placeholder",
+            teamName: "Competition Team",
+            teamLevel: "ProTeam",
+            role: "Development rider",
+            salary: 22000,
+            raceAccess: 60,
+            development: 65,
+            leadership: 35,
+            offerType: "competition"
+        })
+    ];
+
+    offers.forEach(
+        offer => addTeamOffer(offer)
+    );
+
+    return getTeamOffers();
+}
+
+function acceptTeamOffer(offerId) {
+    if (teamOfferState.decisionMade) {
+        console.warn(
+            "A team decision has already been made."
+        );
+
+        return false;
+    }
+
+    const offer =
+        getTeamOfferById(offerId);
+
+    if (!offer) {
+        console.warn(
+            `Cannot accept unknown offer: ${offerId}`
+        );
+
+        return false;
+    }
+
+    if (!game.player) {
+        console.warn(
+            "Cannot accept offer without a player."
+        );
+
+        return false;
+    }
+
+    teamOfferState.selectedOfferId =
+        offerId;
+
+    teamOfferState.decisionMade =
+        true;
+
+    offer.status = "Accepted";
+
+    game.team = {
+        id: offer.teamId,
+        name: offer.teamName,
+        level: offer.teamLevel,
+        playerRole: offer.role,
+        joinedDate:
+            game.career.currentDate
+    };
+
+    game.contract = {
+        teamId: offer.teamId,
+        startDate:
+            game.career.currentDate,
+        endDate:
+            getContractEndDate(2),
+        salary: offer.salary,
+        role: offer.role,
+        raceAccess: offer.raceAccess,
+        development:
+            offer.development,
+        leadership:
+            offer.leadership,
+        status: "Active"
+    };
+
+    game.player.status =
+        "Under Contract";
+
+    teamOfferState.offers.forEach(
+        otherOffer => {
+            if (
+                otherOffer.id !== offerId &&
+                otherOffer.status === "Pending"
+            ) {
+                otherOffer.status =
+                    "Rejected";
+            }
+        }
+    );
+
+    addHistoryEntry({
+        type: "Team",
+        title: "First professional contract",
+        description:
+            `Joined ${offer.teamName} as ${offer.role}.`
+    });
+
+    return true;
+}
+
+function rejectTeamOffer(offerId) {
+    const offer =
+        getTeamOfferById(offerId);
+
+    if (!offer) {
+        console.warn(
+            `Cannot reject unknown offer: ${offerId}`
+        );
+
+        return false;
+    }
+
+    if (
+        offer.status !== "Pending"
+    ) {
+        return false;
+    }
+
+    offer.status = "Rejected";
+
+    return true;
+}
+
+function rejectAllTeamOffers() {
+    teamOfferState.offers.forEach(
+        offer => {
+            if (
+                offer.status === "Pending"
+            ) {
+                offer.status =
+                    "Rejected";
+            }
+        }
+    );
+}
+
+function getContractEndDate(years) {
+    const date =
+        new Date(
+            game.career.currentDate
+        );
+
+    date.setFullYear(
+        date.getFullYear() + years
+    );
+
+    return date
+        .toISOString()
+        .split("T")[0];
+}
+
+function hasAcceptedTeam() {
+    return (
+        !!game.team &&
+        !!game.contract &&
+        game.contract.status === "Active"
+    );
+}
+
+function getCurrentTeam() {
+    return game.team;
+}
+
+function getCurrentContract() {
+    return game.contract;
+}
+
+function getTeamOfferSummary(offer) {
+    if (!offer) {
+        return null;
+    }
+
+    return {
+        id: offer.id,
+        teamName: offer.teamName,
+        teamLevel: offer.teamLevel,
+        role: offer.role,
+        salary: offer.salary,
+        raceAccess: offer.raceAccess,
+        development: offer.development,
+        leadership: offer.leadership,
+        offerType:
+            offerTypes[
+                offer.offerType
+            ] || null,
+        score:
+            calculateOfferScore(offer),
+        status: offer.status
+    };
+}
+
+function getAllTeamOfferSummaries() {
+    return teamOfferState.offers.map(
+        offer =>
+            getTeamOfferSummary(offer)
+    );
+}
+
+console.log(
+    "Team Offers system loaded."
+);
+// ============================================
+// CYCLING CAREER
+// script.js — Del 8
+// Career Date & Time System
+// ============================================
+
+const careerTime = {
+    startDate: "2026-01-01",
+
+    simulation: {
+        daysPassed: 0,
+        weeksPassed: 0,
+        monthsPassed: 0,
+        yearsPassed: 0
+    }
+};
+
+function parseCareerDate(dateString) {
+    const date =
+        new Date(`${dateString}T00:00:00`);
+
+    if (Number.isNaN(date.getTime())) {
+        console.error(
+            `Invalid career date: ${dateString}`
+        );
+
+        return null;
+    }
+
+    return date;
+}
+
+function formatCareerDate(date) {
+    if (!(date instanceof Date)) {
+        return null;
+    }
+
+    return date
+        .toISOString()
+        .split("T")[0];
+}
+
+function getCurrentDate() {
+    return game.career.currentDate;
+}
+
+function getCurrentDateObject() {
+    return parseCareerDate(
+        game.career.currentDate
+    );
+}
+
+function setCareerDate(date) {
+    const parsed =
+        typeof date === "string"
+            ? parseCareerDate(date)
+            : date;
+
+    if (!parsed) {
+        return false;
+    }
+
+    game.career.currentDate =
+        formatCareerDate(parsed);
+
+    updateCareerSeason();
+
+    return true;
+}
+
+function addDaysToCareer(days) {
+    const numericDays =
+        Number(days);
+
+    if (
+        !Number.isFinite(numericDays) ||
+        numericDays < 0
+    ) {
+        console.warn(
+            "Days must be a positive number."
+        );
+
+        return false;
+    }
+
+    const currentDate =
+        getCurrentDateObject();
+
+    if (!currentDate) {
+        return false;
+    }
+
+    currentDate.setDate(
+        currentDate.getDate() +
+        numericDays
+    );
+
+    game.career.currentDate =
+        formatCareerDate(currentDate);
+
+    game.career.daysPassed +=
+        numericDays;
+
+    careerTime.simulation.daysPassed +=
+        numericDays;
+
+    updateCareerSeason();
+
+    return true;
+}
+
+function advanceOneDay() {
+    return addDaysToCareer(1);
+}
+
+function advanceDays(days) {
+    return addDaysToCareer(days);
+}
+
+function advanceOneWeek() {
+    return addDaysToCareer(7);
+}
+
+function advanceWeeks(weeks) {
+    return addDaysToCareer(
+        Number(weeks) * 7
+    );
+}
+
+function getCurrentYear() {
+    const date =
+        getCurrentDateObject();
+
+    if (!date) {
+        return null;
+    }
+
+    return date.getFullYear();
+}
+
+function getCurrentMonth() {
+    const date =
+        getCurrentDateObject();
+
+    if (!date) {
+        return null;
+    }
+
+    return date.getMonth() + 1;
+}
+
+function getCurrentDay() {
+    const date =
+        getCurrentDateObject();
+
+    if (!date) {
+        return null;
+    }
+
+    return date.getDate();
+}
+
+function getDayOfYear() {
+    const date =
+        getCurrentDateObject();
+
+    if (!date) {
+        return null;
+    }
+
+    const start =
+        new Date(
+            date.getFullYear(),
+            0,
+            0
+        );
+
+    const difference =
+        date - start;
+
+    const oneDay =
+        1000 * 60 * 60 * 24;
+
+    return Math.floor(
+        difference / oneDay
+    );
+}
+
+function getWeekOfYear() {
+    const date =
+        getCurrentDateObject();
+
+    if (!date) {
+        return null;
+    }
+
+    const start =
+        new Date(
+            date.getFullYear(),
+            0,
+            1
+        );
+
+    const difference =
+        date - start;
+
+    const oneWeek =
+        1000 * 60 * 60 * 24 * 7;
+
+    return Math.ceil(
+        (
+            difference /
+            oneWeek
+        ) + 1
+    );
+}
+
+function getMonthName(month) {
+    const months = [
+        "January",
+        "February",
+        "March",
+        "April",
+        "May",
+        "June",
+        "July",
+        "August",
+        "September",
+        "October",
+        "November",
+        "December"
+    ];
+
+    return months[month - 1] || "";
+}
+
+function getDayName(date = getCurrentDateObject()) {
+    if (!date) {
+        return "";
+    }
+
+    const days = [
+        "Sunday",
+        "Monday",
+        "Tuesday",
+        "Wednesday",
+        "Thursday",
+        "Friday",
+        "Saturday"
+    ];
+
+    return days[
+        date.getDay()
+    ];
+}
+
+function getFormattedCareerDate(
+    date = getCurrentDateObject()
+) {
+    if (!date) {
+        return "";
+    }
+
+    const day =
+        String(
+            date.getDate()
+        ).padStart(2, "0");
+
+    const month =
+        String(
+            date.getMonth() + 1
+        ).padStart(2, "0");
+
+    const year =
+        date.getFullYear();
+
+    return `${day}/${month}/${year}`;
+}
+
+function getLongCareerDate(
+    date = getCurrentDateObject()
+) {
+    if (!date) {
+        return "";
+    }
+
+    const day =
+        date.getDate();
+
+    const month =
+        getMonthName(
+            date.getMonth() + 1
+        );
+
+    const year =
+        date.getFullYear();
+
+    return `${day} ${month} ${year}`;
+}
+
+function getSeasonPhase() {
+    const month =
+        getCurrentMonth();
+
+    if (!month) {
+        return null;
+    }
+
+    if (month === 1) {
+        return "Season Setup";
+    }
+
+    if (month >= 2 && month <= 3) {
+        return "Early Season";
+    }
+
+    if (month === 4) {
+        return "Spring Classics";
+    }
+
+    if (month >= 5 && month <= 6) {
+        return "Stage Race Season";
+    }
+
+    if (month === 7) {
+        return "Tour Season";
+    }
+
+    if (month >= 8 && month <= 9) {
+        return "Late Season";
+    }
+
+    if (month === 10) {
+        return "Autumn";
+    }
+
+    return "Offseason";
+}
+
+function updateCareerSeason() {
+    const year =
+        getCurrentYear();
+
+    if (!year) {
+        return;
+    }
+
+    game.career.season =
+        year;
+
+    game.world.year =
+        year;
+}
+
+function getSeasonProgress() {
+    const day =
+        getDayOfYear();
+
+    if (!day) {
+        return 0;
+    }
+
+    const currentYear =
+        getCurrentYear();
+
+    const start =
+        new Date(
+            currentYear,
+            0,
+            1
+        );
+
+    const end =
+        new Date(
+            currentYear + 1,
+            0,
+            1
+        );
+
+    const totalDays =
+        (
+            end - start
+        ) / (
+            1000 * 60 * 60 * 24
+        );
+
+    return Math.round(
+        (
+            day /
+            totalDays
+        ) * 100
+    );
+}
+
+function getDaysBetween(
+    startDate,
+    endDate
+) {
+    const start =
+        parseCareerDate(
+            startDate
+        );
+
+    const end =
+        parseCareerDate(
+            endDate
+        );
+
+    if (!start || !end) {
+        return null;
+    }
+
+    const difference =
+        end - start;
+
+    return Math.round(
+        difference /
+        (
+            1000 *
+            60 *
+            60 *
+            24
+        )
+    );
+}
+
+function isDateBefore(
+    firstDate,
+    secondDate
+) {
+    const first =
+        parseCareerDate(
+            firstDate
+        );
+
+    const second =
+        parseCareerDate(
+            secondDate
+        );
+
+    if (!first || !second) {
+        return false;
+    }
+
+    return first < second;
+}
+
+function isDateAfter(
+    firstDate,
+    secondDate
+) {
+    const first =
+        parseCareerDate(
+            firstDate
+        );
+
+    const second =
+        parseCareerDate(
+            secondDate
+        );
+
+    if (!first || !second) {
+        return false;
+    }
+
+    return first > second;
+}
+
+function isDateSameDay(
+    firstDate,
+    secondDate
+) {
+    return (
+        firstDate ===
+        secondDate
+    );
+}
+
+function getCareerTimeState() {
+    return {
+        date:
+            getCurrentDate(),
+
+        formattedDate:
+            getFormattedCareerDate(),
+
+        longDate:
+            getLongCareerDate(),
+
+        year:
+            getCurrentYear(),
+
+        month:
+            getCurrentMonth(),
+
+        day:
+            getCurrentDay(),
+
+        dayOfYear:
+            getDayOfYear(),
+
+        week:
+            getWeekOfYear(),
+
+        season:
+            getSeasonPhase(),
+
+        seasonProgress:
+            getSeasonProgress(),
+
+        daysPassed:
+            game.career.daysPassed
+    };
+}
+
+function resetCareerTime() {
+    game.career.currentDate =
+        careerTime.startDate;
+
+    game.career.season =
+        2026;
+
+    game.career.daysPassed =
+        0;
+
+    game.world.year =
+        2026;
+
+    careerTime.simulation.daysPassed =
+        0;
+
+    careerTime.simulation.weeksPassed =
+        0;
+
+    careerTime.simulation.monthsPassed =
+        0;
+
+    careerTime.simulation.yearsPassed =
+        0;
+}
+
+console.log(
+    "Career Time system loaded."
+);
