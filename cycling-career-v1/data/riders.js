@@ -1,0 +1,6 @@
+window.RIDERS=[
+{id:"pogacar",name:"Tadej Pogačar",team:"UAE Team Emirates XRG",age:27,nat:"SI",profile:"Allround",stats:{sprint:86,acceleration:92,endurance:98,recovery:96,flat:90,hill:99,mediumMountain:99,mountain:98,cobblestones:88,itt:94,positioning:96,raceIQ:99,technique:95,mentality:99,teamwork:90}},
+{id:"evenepoel",name:"Remco Evenepoel",team:"Red Bull - Bora - Hansgrohe",age:26,nat:"BE",profile:"Time Trialist",stats:{sprint:77,acceleration:85,endurance:96,recovery:92,flat:94,hill:91,mediumMountain:90,mountain:88,cobblestones:76,itt:99,positioning:91,raceIQ:97,technique:94,mentality:96,teamwork:87}},
+{id:"del-toro",name:"Isaac Del Toro",team:"UAE Team Emirates XRG",age:22,nat:"MX",profile:"Allround",stats:{sprint:78,acceleration:88,endurance:92,recovery:91,flat:84,hill:93,mediumMountain:95,mountain:94,cobblestones:70,itt:79,positioning:88,raceIQ:89,technique:88,mentality:91,teamwork:82}},
+{id:"generic-young",name:"Lukas Meyer",team:"Uno-X Mobility",age:18,nat:"DK",profile:"Classics Rider",stats:{sprint:68,acceleration:73,endurance:71,recovery:70,flat:76,hill:78,mediumMountain:65,mountain:52,cobblestones:80,itt:61,positioning:70,raceIQ:64,technique:74,mentality:72,teamwork:69}}
+];
