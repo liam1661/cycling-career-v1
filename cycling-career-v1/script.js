@@ -6441,3 +6441,5756 @@ function resetTrainingSystem() {
 console.log(
     "Training & Development system loaded."
 );
+// ============================================
+// CYCLING CAREER
+// script.js — Del 14
+// Recovery, Form & Fatigue System
+// ============================================
+
+const recoveryState = {
+    activeMode: "Normal",
+    history: [],
+    lastRecovery: null
+};
+
+const recoveryModes = {
+    Full: {
+        name: "Full Recovery",
+        description:
+            "Focus completely on recovery and return as fresh as possible.",
+        energyRecovery: 1.35,
+        fatigueReduction: 1.45,
+        formEffect: 0.35,
+        trainingMultiplier: 0
+    },
+
+    Normal: {
+        name: "Normal",
+        description:
+            "Balance recovery with normal preparation and development.",
+        energyRecovery: 1,
+        fatigueReduction: 1,
+        formEffect: 0.15,
+        trainingMultiplier: 0.5
+    },
+
+    Training: {
+        name: "Training",
+        description:
+            "Continue training while accepting slower recovery.",
+        energyRecovery: 0.65,
+        fatigueReduction: 0.55,
+        formEffect: -0.05,
+        trainingMultiplier: 1
+    }
+};
+
+const fatigueLevels = {
+    Fresh: {
+        minimum: 0,
+        maximum: 19,
+        description:
+            "The rider is fresh and recovering well."
+    },
+
+    Normal: {
+        minimum: 20,
+        maximum: 39,
+        description:
+            "Normal accumulated fatigue."
+    },
+
+    Tired: {
+        minimum: 40,
+        maximum: 59,
+        description:
+            "Fatigue is becoming noticeable."
+    },
+
+    VeryTired: {
+        minimum: 60,
+        maximum: 79,
+        description:
+            "High fatigue may begin to affect performance."
+    },
+
+    Exhausted: {
+        minimum: 80,
+        maximum: 100,
+        description:
+            "Severe fatigue. Recovery should become a priority."
+    }
+};
+
+const energyLevels = {
+    High: {
+        minimum: 75,
+        maximum: 100,
+        description:
+            "The rider has plenty of available energy."
+    },
+
+    Good: {
+        minimum: 50,
+        maximum: 74,
+        description:
+            "The rider has a solid energy reserve."
+    },
+
+    Limited: {
+        minimum: 30,
+        maximum: 49,
+        description:
+            "Energy is becoming limited."
+    },
+
+    Low: {
+        minimum: 10,
+        maximum: 29,
+        description:
+            "The rider is running low on energy."
+    },
+
+    Critical: {
+        minimum: 0,
+        maximum: 9,
+        description:
+            "Very little immediate energy remains."
+    }
+};
+
+const formLevels = {
+    Excellent: {
+        minimum: 90,
+        maximum: 100
+    },
+
+    VeryGood: {
+        minimum: 80,
+        maximum: 89
+    },
+
+    Good: {
+        minimum: 70,
+        maximum: 79
+    },
+
+    Average: {
+        minimum: 55,
+        maximum: 69
+    },
+
+    Poor: {
+        minimum: 40,
+        maximum: 54
+    },
+
+    VeryPoor: {
+        minimum: 0,
+        maximum: 39
+    }
+};
+
+
+// ============================================
+// RECOVERY MODE
+// ============================================
+
+function getRecoveryMode(mode) {
+    return (
+        recoveryModes[mode] ||
+        null
+    );
+}
+
+function getRecoveryModes() {
+    return Object.entries(
+        recoveryModes
+    ).map(
+        ([id, mode]) => ({
+            id,
+            name: mode.name,
+            description:
+                mode.description
+        })
+    );
+}
+
+function setRecoveryMode(mode) {
+    if (!recoveryModes[mode]) {
+        console.warn(
+            `Unknown recovery mode: ${mode}`
+        );
+
+        return false;
+    }
+
+    recoveryState.activeMode =
+        mode;
+
+    return true;
+}
+
+function getActiveRecoveryMode() {
+    return recoveryState.activeMode;
+}
+
+
+// ============================================
+// LEVEL HELPERS
+// ============================================
+
+function getFatigueLevel(value) {
+    const fatigue =
+        clamp(
+            Number(value) || 0,
+            0,
+            100
+        );
+
+    if (fatigue >= 80) {
+        return "Exhausted";
+    }
+
+    if (fatigue >= 60) {
+        return "VeryTired";
+    }
+
+    if (fatigue >= 40) {
+        return "Tired";
+    }
+
+    if (fatigue >= 20) {
+        return "Normal";
+    }
+
+    return "Fresh";
+}
+
+function getEnergyLevel(value) {
+    const energy =
+        clamp(
+            Number(value) || 0,
+            0,
+            100
+        );
+
+    if (energy >= 75) {
+        return "High";
+    }
+
+    if (energy >= 50) {
+        return "Good";
+    }
+
+    if (energy >= 30) {
+        return "Limited";
+    }
+
+    if (energy >= 10) {
+        return "Low";
+    }
+
+    return "Critical";
+}
+
+function getFormLevel(value) {
+    const form =
+        clamp(
+            Number(value) || 0,
+            0,
+            100
+        );
+
+    if (form >= 90) {
+        return "Excellent";
+    }
+
+    if (form >= 80) {
+        return "VeryGood";
+    }
+
+    if (form >= 70) {
+        return "Good";
+    }
+
+    if (form >= 55) {
+        return "Average";
+    }
+
+    if (form >= 40) {
+        return "Poor";
+    }
+
+    return "VeryPoor";
+}
+
+function getFatigueDescription(value) {
+    const level =
+        getFatigueLevel(value);
+
+    return (
+        fatigueLevels[level]
+            ?.description ||
+        ""
+    );
+}
+
+function getEnergyDescription(value) {
+    const level =
+        getEnergyLevel(value);
+
+    return (
+        energyLevels[level]
+            ?.description ||
+        ""
+    );
+}
+
+
+// ============================================
+// DAILY RECOVERY CALCULATIONS
+// ============================================
+
+function calculateDailyEnergyRecovery() {
+    if (!game.player) {
+        return 0;
+    }
+
+    const mode =
+        getRecoveryMode(
+            recoveryState.activeMode
+        );
+
+    if (!mode) {
+        return 0;
+    }
+
+    const fatiguePenalty =
+        1 -
+        (
+            game.player.fatigue /
+            100
+        ) * 0.25;
+
+    const baseRecovery =
+        8 *
+        mode.energyRecovery;
+
+    return Math.max(
+        0,
+        baseRecovery *
+        fatiguePenalty
+    );
+}
+
+function calculateDailyFatigueReduction() {
+    if (!game.player) {
+        return 0;
+    }
+
+    const mode =
+        getRecoveryMode(
+            recoveryState.activeMode
+        );
+
+    if (!mode) {
+        return 0;
+    }
+
+    const baseReduction =
+        5 *
+        mode.fatigueReduction;
+
+    /*
+        Higher fatigue allows slightly faster
+        recovery, while low fatigue naturally
+        slows down.
+    */
+
+    const fatigueRecoveryFactor =
+        game.player.fatigue >= 60
+            ? 1.15
+            : game.player.fatigue >= 30
+                ? 1
+                : 0.8;
+
+    return Math.max(
+        0,
+        baseReduction *
+        fatigueRecoveryFactor
+    );
+}
+
+function calculateDailyFormChange() {
+    if (!game.player) {
+        return 0;
+    }
+
+    const mode =
+        getRecoveryMode(
+            recoveryState.activeMode
+        );
+
+    if (!mode) {
+        return 0;
+    }
+
+    let change =
+        mode.formEffect;
+
+    /*
+        Very high fatigue can gradually reduce
+        form, while good recovery can stabilize it.
+    */
+
+    if (
+        game.player.fatigue >= 70
+    ) {
+        change -= 0.25;
+    } else if (
+        game.player.fatigue <= 20 &&
+        game.player.energy >= 80
+    ) {
+        change += 0.15;
+    }
+
+    return change;
+}
+
+
+// ============================================
+// APPLY DAILY RECOVERY
+// ============================================
+
+function applyDailyRecovery() {
+    if (!game.player) {
+        return null;
+    }
+
+    const before = {
+        energy:
+            game.player.energy,
+
+        fatigue:
+            game.player.fatigue,
+
+        form:
+            game.player.form
+    };
+
+    const energyRecovery =
+        calculateDailyEnergyRecovery();
+
+    const fatigueReduction =
+        calculateDailyFatigueReduction();
+
+    const formChange =
+        calculateDailyFormChange();
+
+    game.player.energy =
+        clamp(
+            game.player.energy +
+            energyRecovery,
+            0,
+            100
+        );
+
+    game.player.fatigue =
+        clamp(
+            game.player.fatigue -
+            fatigueReduction,
+            0,
+            100
+        );
+
+    game.player.form =
+        clamp(
+            game.player.form +
+            formChange,
+            0,
+            100
+        );
+
+    const recoveryResult = {
+        date:
+            game.career.currentDate,
+
+        mode:
+            recoveryState.activeMode,
+
+        energy: {
+            before:
+                before.energy,
+
+            after:
+                Number(
+                    game.player.energy.toFixed(2)
+                ),
+
+            change:
+                Number(
+                    (
+                        game.player.energy -
+                        before.energy
+                    ).toFixed(2)
+                )
+        },
+
+        fatigue: {
+            before:
+                before.fatigue,
+
+            after:
+                Number(
+                    game.player.fatigue.toFixed(2)
+                ),
+
+            change:
+                Number(
+                    (
+                        game.player.fatigue -
+                        before.fatigue
+                    ).toFixed(2)
+                )
+        },
+
+        form: {
+            before:
+                before.form,
+
+            after:
+                Number(
+                    game.player.form.toFixed(2)
+                ),
+
+            change:
+                Number(
+                    (
+                        game.player.form -
+                        before.form
+                    ).toFixed(2)
+                )
+        }
+    };
+
+    recoveryState.history.push(
+        recoveryResult
+    );
+
+    recoveryState.lastRecovery =
+        recoveryResult;
+
+    return recoveryResult;
+}
+
+
+// ============================================
+// MULTI-DAY RECOVERY
+// ============================================
+
+function simulateRecoveryDays(
+    days
+) {
+    if (!game.player) {
+        return null;
+    }
+
+    const numericDays =
+        Number(days);
+
+    if (
+        !Number.isFinite(
+            numericDays
+        ) ||
+        numericDays < 1
+    ) {
+        console.warn(
+            "Recovery days must be at least one."
+        );
+
+        return null;
+    }
+
+    const results = [];
+
+    for (
+        let day = 0;
+        day < Math.floor(numericDays);
+        day++
+    ) {
+        /*
+            Recovery is applied before the date
+            advances so every simulated day gets
+            exactly one recovery cycle.
+        */
+
+        results.push(
+            applyDailyRecovery()
+        );
+
+        if (
+            day <
+            Math.floor(numericDays) - 1
+        ) {
+            advanceDays(1);
+        }
+    }
+
+    return results;
+}
+
+
+// ============================================
+// FATIGUE MANAGEMENT
+// ============================================
+
+function addFatigue(
+    amount,
+    reason = ""
+) {
+    if (!game.player) {
+        return false;
+    }
+
+    const numericAmount =
+        Number(amount);
+
+    if (
+        !Number.isFinite(
+            numericAmount
+        )
+    ) {
+        return false;
+    }
+
+    const before =
+        game.player.fatigue;
+
+    game.player.fatigue =
+        clamp(
+            before +
+            numericAmount,
+            0,
+            100
+        );
+
+    if (
+        reason
+    ) {
+        game.player.lastFatigueReason =
+            reason;
+    }
+
+    return true;
+}
+
+function reduceFatigue(
+    amount,
+    reason = ""
+) {
+    if (!game.player) {
+        return false;
+    }
+
+    const numericAmount =
+        Number(amount);
+
+    if (
+        !Number.isFinite(
+            numericAmount
+        )
+    ) {
+        return false;
+    }
+
+    const before =
+        game.player.fatigue;
+
+    game.player.fatigue =
+        clamp(
+            before -
+            Math.abs(numericAmount),
+            0,
+            100
+        );
+
+    if (
+        reason
+    ) {
+        game.player.lastRecoveryReason =
+            reason;
+    }
+
+    return true;
+}
+
+function getCurrentFatigue() {
+    return game.player
+        ? game.player.fatigue
+        : null;
+}
+
+function isHighlyFatigued() {
+    return (
+        !!game.player &&
+        game.player.fatigue >= 60
+    );
+}
+
+function isExhausted() {
+    return (
+        !!game.player &&
+        game.player.fatigue >= 80
+    );
+}
+
+
+// ============================================
+// ENERGY MANAGEMENT
+// ============================================
+
+function addEnergy(
+    amount,
+    reason = ""
+) {
+    if (!game.player) {
+        return false;
+    }
+
+    const numericAmount =
+        Number(amount);
+
+    if (
+        !Number.isFinite(
+            numericAmount
+        )
+    ) {
+        return false;
+    }
+
+    game.player.energy =
+        clamp(
+            game.player.energy +
+            numericAmount,
+            0,
+            100
+        );
+
+    if (reason) {
+        game.player.lastEnergyReason =
+            reason;
+    }
+
+    return true;
+}
+
+function consumeEnergy(
+    amount,
+    reason = ""
+) {
+    if (!game.player) {
+        return false;
+    }
+
+    const numericAmount =
+        Number(amount);
+
+    if (
+        !Number.isFinite(
+            numericAmount
+        )
+    ) {
+        return false;
+    }
+
+    game.player.energy =
+        clamp(
+            game.player.energy -
+            Math.abs(numericAmount),
+            0,
+            100
+        );
+
+    if (reason) {
+        game.player.lastEnergyReason =
+            reason;
+    }
+
+    return true;
+}
+
+function getCurrentEnergy() {
+    return game.player
+        ? game.player.energy
+        : null;
+}
+
+function isLowEnergy() {
+    return (
+        !!game.player &&
+        game.player.energy < 30
+    );
+}
+
+
+// ============================================
+// FORM MANAGEMENT
+// ============================================
+
+function changeForm(
+    amount,
+    reason = ""
+) {
+    if (!game.player) {
+        return false;
+    }
+
+    const numericAmount =
+        Number(amount);
+
+    if (
+        !Number.isFinite(
+            numericAmount
+        )
+    ) {
+        return false;
+    }
+
+    const before =
+        game.player.form;
+
+    game.player.form =
+        clamp(
+            before +
+            numericAmount,
+            0,
+            100
+        );
+
+    if (reason) {
+        game.player.lastFormReason =
+            reason;
+    }
+
+    return true;
+}
+
+function getCurrentForm() {
+    return game.player
+        ? game.player.form
+        : null;
+}
+
+function isInGoodForm() {
+    return (
+        !!game.player &&
+        game.player.form >= 70
+    );
+}
+
+function isInPeakForm() {
+    return (
+        !!game.player &&
+        game.player.form >= 90
+    );
+}
+
+
+// ============================================
+// RECOVERY STATUS
+// ============================================
+
+function getRecoveryStatus() {
+    if (!game.player) {
+        return null;
+    }
+
+    return {
+        mode:
+            recoveryState.activeMode,
+
+        modeName:
+            recoveryModes[
+                recoveryState.activeMode
+            ]?.name || "",
+
+        energy:
+            Number(
+                game.player.energy.toFixed(2)
+            ),
+
+        energyLevel:
+            getEnergyLevel(
+                game.player.energy
+            ),
+
+        fatigue:
+            Number(
+                game.player.fatigue.toFixed(2)
+            ),
+
+        fatigueLevel:
+            getFatigueLevel(
+                game.player.fatigue
+            ),
+
+        form:
+            Number(
+                game.player.form.toFixed(2)
+            ),
+
+        formLevel:
+            getFormLevel(
+                game.player.form
+            ),
+
+        highlyFatigued:
+            isHighlyFatigued(),
+
+        exhausted:
+            isExhausted(),
+
+        lowEnergy:
+            isLowEnergy(),
+
+        goodForm:
+            isInGoodForm(),
+
+        peakForm:
+            isInPeakForm()
+    };
+}
+
+
+// ============================================
+// RECOVERY HISTORY
+// ============================================
+
+function getRecoveryHistory() {
+    return recoveryState.history;
+}
+
+function getLastRecovery() {
+    return recoveryState.lastRecovery;
+}
+
+function clearRecoveryHistory() {
+    recoveryState.history = [];
+    recoveryState.lastRecovery = null;
+}
+
+
+// ============================================
+// FULL PHYSICAL STATUS
+// ============================================
+
+function getPlayerPhysicalStatus() {
+    if (!game.player) {
+        return null;
+    }
+
+    return {
+        energy: {
+            value:
+                game.player.energy,
+
+            level:
+                getEnergyLevel(
+                    game.player.energy
+                ),
+
+            description:
+                getEnergyDescription(
+                    game.player.energy
+                )
+        },
+
+        fatigue: {
+            value:
+                game.player.fatigue,
+
+            level:
+                getFatigueLevel(
+                    game.player.fatigue
+                ),
+
+            description:
+                getFatigueDescription(
+                    game.player.fatigue
+                )
+        },
+
+        form: {
+            value:
+                game.player.form,
+
+            level:
+                getFormLevel(
+                    game.player.form
+                )
+        },
+
+        recoveryMode:
+            recoveryState.activeMode
+    };
+}
+
+
+// ============================================
+// RESET
+// ============================================
+
+function resetRecoverySystem() {
+    recoveryState.activeMode =
+        "Normal";
+
+    recoveryState.history = [];
+
+    recoveryState.lastRecovery =
+        null;
+}
+
+console.log(
+    "Recovery, Form & Fatigue system loaded."
+);
+// ============================================
+// CYCLING CAREER
+// script.js — Del 15
+// Race Preparation & Race Readiness
+// ============================================
+
+const racePreparationState = {
+    activePreparation: null,
+    history: [],
+    lastPreparation: null
+};
+
+const racePreparationModes = {
+    "Peak": {
+        name: "Peak for Race",
+        description:
+            "Prioritize freshness and form for the target race.",
+        recoveryMultiplier: 1.2,
+        formMultiplier: 1.15,
+        fatigueReductionMultiplier: 1.2,
+        trainingLoadMultiplier: 0.5
+    },
+
+    "Balanced": {
+        name: "Balanced Preparation",
+        description:
+            "Balance training, recovery and race readiness.",
+        recoveryMultiplier: 1,
+        formMultiplier: 1,
+        fatigueReductionMultiplier: 1,
+        trainingLoadMultiplier: 0.8
+    },
+
+    "Development": {
+        name: "Development Focus",
+        description:
+            "Continue development even if race freshness is lower.",
+        recoveryMultiplier: 0.8,
+        formMultiplier: 0.85,
+        fatigueReductionMultiplier: 0.75,
+        trainingLoadMultiplier: 1.15
+    }
+};
+
+
+// ============================================
+// PREPARATION CREATION
+// ============================================
+
+function createRacePreparation({
+    raceId,
+    raceName,
+    targetDate,
+    mode = "Balanced"
+} = {}) {
+    if (!raceId || !raceName || !targetDate) {
+        console.warn(
+            "Race preparation requires a race, name and target date."
+        );
+
+        return null;
+    }
+
+    if (!racePreparationModes[mode]) {
+        console.warn(
+            `Unknown race preparation mode: ${mode}`
+        );
+
+        return null;
+    }
+
+    if (
+        isDateBefore(
+            targetDate,
+            game.career.currentDate
+        )
+    ) {
+        console.warn(
+            "Race target date cannot be before the current career date."
+        );
+
+        return null;
+    }
+
+    const daysUntil =
+        getDaysBetween(
+            game.career.currentDate,
+            targetDate
+        );
+
+    return {
+        id:
+            `race-prep-${raceId}-${Date.now()}`,
+
+        raceId,
+
+        raceName,
+
+        targetDate,
+
+        mode,
+
+        daysUntil,
+
+        status: "Planned",
+
+        createdDate:
+            game.career.currentDate
+    };
+}
+
+function setRacePreparation(
+    preparation
+) {
+    if (!preparation) {
+        return false;
+    }
+
+    racePreparationState.activePreparation =
+        preparation;
+
+    return true;
+}
+
+function startRacePreparation(
+    options = {}
+) {
+    const preparation =
+        createRacePreparation(
+            options
+        );
+
+    if (!preparation) {
+        return false;
+    }
+
+    preparation.status =
+        "Active";
+
+    setRacePreparation(
+        preparation
+    );
+
+    return true;
+}
+
+function cancelRacePreparation() {
+    if (
+        !racePreparationState.activePreparation
+    ) {
+        return false;
+    }
+
+    racePreparationState
+        .activePreparation
+        .status =
+        "Cancelled";
+
+    racePreparationState
+        .activePreparation =
+        null;
+
+    return true;
+}
+
+function getActiveRacePreparation() {
+    return (
+        racePreparationState
+            .activePreparation ||
+        null
+    );
+}
+
+
+// ============================================
+// PREPARATION MODES
+// ============================================
+
+function getRacePreparationMode(
+    mode
+) {
+    return (
+        racePreparationModes[mode] ||
+        null
+    );
+}
+
+function getRacePreparationModes() {
+    return Object.entries(
+        racePreparationModes
+    ).map(
+        ([id, mode]) => ({
+            id,
+            name: mode.name,
+            description:
+                mode.description
+        })
+    );
+}
+
+
+// ============================================
+// READINESS COMPONENTS
+// ============================================
+
+function calculateFreshnessScore() {
+    if (!game.player) {
+        return 0;
+    }
+
+    /*
+        Energy represents immediate availability.
+        Fatigue represents accumulated physical load.
+    */
+
+    const energyScore =
+        game.player.energy;
+
+    const fatigueScore =
+        100 -
+        game.player.fatigue;
+
+    return Math.round(
+        (
+            energyScore * 0.55 +
+            fatigueScore * 0.45
+        )
+    );
+}
+
+function calculateFormScore() {
+    if (!game.player) {
+        return 0;
+    }
+
+    return clamp(
+        game.player.form,
+        0,
+        100
+    );
+}
+
+function calculateExperienceScore() {
+    if (!game.player) {
+        return 0;
+    }
+
+    /*
+        Experience is deliberately a smaller part
+        of race readiness than physical condition.
+    */
+
+    const experience =
+        Number(
+            game.player.experience
+        ) || 0;
+
+    return clamp(
+        50 +
+        experience * 0.1,
+        50,
+        100
+    );
+}
+
+function calculateMentalReadiness() {
+    if (!game.player) {
+        return 0;
+    }
+
+    const mentality =
+        game.player.stats
+            ?.mentality ?? 0;
+
+    const raceIQ =
+        game.player.stats
+            ?.raceIQ ?? 0;
+
+    return Math.round(
+        (
+            mentality +
+            raceIQ
+        ) / 2
+    );
+}
+
+
+// ============================================
+// RACE READINESS
+// ============================================
+
+function calculateRaceReadiness() {
+    if (!game.player) {
+        return null;
+    }
+
+    const freshness =
+        calculateFreshnessScore();
+
+    const form =
+        calculateFormScore();
+
+    const experience =
+        calculateExperienceScore();
+
+    const mental =
+        calculateMentalReadiness();
+
+    const readiness =
+        Math.round(
+            freshness * 0.4 +
+            form * 0.3 +
+            experience * 0.1 +
+            mental * 0.2
+        );
+
+    return clamp(
+        readiness,
+        0,
+        100
+    );
+}
+
+function getRaceReadinessLevel(
+    readiness
+) {
+    const value =
+        clamp(
+            Number(readiness) || 0,
+            0,
+            100
+        );
+
+    if (value >= 90) {
+        return "Excellent";
+    }
+
+    if (value >= 80) {
+        return "Very Good";
+    }
+
+    if (value >= 70) {
+        return "Good";
+    }
+
+    if (value >= 55) {
+        return "Average";
+    }
+
+    if (value >= 40) {
+        return "Poor";
+    }
+
+    return "Very Poor";
+}
+
+function getRaceReadinessDescription(
+    readiness
+) {
+    const level =
+        getRaceReadinessLevel(
+            readiness
+        );
+
+    const descriptions = {
+        Excellent:
+            "The rider is in excellent condition for racing.",
+
+        "Very Good":
+            "The rider is very well prepared for the race.",
+
+        Good:
+            "The rider should be able to perform well.",
+
+        Average:
+            "The rider is reasonably prepared, but not at peak condition.",
+
+        Poor:
+            "The rider may struggle to perform at their normal level.",
+
+        "Very Poor":
+            "The rider is not in good condition for a demanding race."
+    };
+
+    return (
+        descriptions[level] ||
+        ""
+    );
+}
+
+
+// ============================================
+// RACE-SPECIFIC READINESS
+// ============================================
+
+function getRaceStatRequirement(
+    raceType
+) {
+    const requirements = {
+        sprint: [
+            "sprint",
+            "acceleration",
+            "positioning"
+        ],
+
+        hill: [
+            "hill",
+            "acceleration",
+            "positioning"
+        ],
+
+        mountain: [
+            "mountain",
+            "endurance",
+            "recovery"
+        ],
+
+        mediumMountain: [
+            "mediumMountain",
+            "endurance",
+            "recovery"
+        ],
+
+        cobbles: [
+            "cobblestones",
+            "technique",
+            "positioning"
+        ],
+
+        itt: [
+            "itt",
+            "endurance",
+            "technique"
+        ],
+
+        stageRace: [
+            "endurance",
+            "recovery",
+            "raceIQ"
+        ],
+
+        allround: [
+            "endurance",
+            "raceIQ",
+            "positioning"
+        ]
+    };
+
+    return (
+        requirements[raceType] ||
+        requirements.allround
+    );
+}
+
+function calculateRaceProfileFit(
+    raceType
+) {
+    if (!game.player) {
+        return 0;
+    }
+
+    const requiredStats =
+        getRaceStatRequirement(
+            raceType
+        );
+
+    const values =
+        requiredStats
+            .map(
+                stat =>
+                    game.player.stats?.[
+                        stat
+                    ] ?? 0
+            );
+
+    if (!values.length) {
+        return 0;
+    }
+
+    const total =
+        values.reduce(
+            (sum, value) =>
+                sum + value,
+            0
+        );
+
+    return Math.round(
+        total /
+        values.length
+    );
+}
+
+function calculateRaceSpecificReadiness(
+    raceType = "allround"
+) {
+    if (!game.player) {
+        return null;
+    }
+
+    const generalReadiness =
+        calculateRaceReadiness();
+
+    const profileFit =
+        calculateRaceProfileFit(
+            raceType
+        );
+
+    return clamp(
+        Math.round(
+            generalReadiness * 0.7 +
+            profileFit * 0.3
+        ),
+        0,
+        100
+    );
+}
+
+
+// ============================================
+// PREPARATION EFFECTS
+// ============================================
+
+function applyRacePreparationDay() {
+    if (!game.player) {
+        return null;
+    }
+
+    const preparation =
+        getActiveRacePreparation();
+
+    if (!preparation) {
+        return null;
+    }
+
+    const mode =
+        getRacePreparationMode(
+            preparation.mode
+        );
+
+    if (!mode) {
+        return null;
+    }
+
+    /*
+        Preparation modifies the normal recovery
+        behavior without replacing the Recovery system.
+    */
+
+    const energyBefore =
+        game.player.energy;
+
+    const fatigueBefore =
+        game.player.fatigue;
+
+    const formBefore =
+        game.player.form;
+
+    const energyRecovery =
+        calculateDailyEnergyRecovery() *
+        mode.recoveryMultiplier;
+
+    const fatigueReduction =
+        calculateDailyFatigueReduction() *
+        mode.fatigueReductionMultiplier;
+
+    let formChange =
+        calculateDailyFormChange() *
+        mode.formMultiplier;
+
+    /*
+        Peak preparation receives a small bonus
+        when the rider is already relatively fresh.
+    */
+
+    if (
+        preparation.mode === "Peak" &&
+        game.player.fatigue <= 30 &&
+        game.player.energy >= 70
+    ) {
+        formChange += 0.1;
+    }
+
+    game.player.energy =
+        clamp(
+            game.player.energy +
+            energyRecovery,
+            0,
+            100
+        );
+
+    game.player.fatigue =
+        clamp(
+            game.player.fatigue -
+            fatigueReduction,
+            0,
+            100
+        );
+
+    game.player.form =
+        clamp(
+            game.player.form +
+            formChange,
+            0,
+            100
+        );
+
+    return {
+        date:
+            game.career.currentDate,
+
+        raceId:
+            preparation.raceId,
+
+        mode:
+            preparation.mode,
+
+        energyChange:
+            Number(
+                (
+                    game.player.energy -
+                    energyBefore
+                ).toFixed(2)
+            ),
+
+        fatigueChange:
+            Number(
+                (
+                    game.player.fatigue -
+                    fatigueBefore
+                ).toFixed(2)
+            ),
+
+        formChange:
+            Number(
+                (
+                    game.player.form -
+                    formBefore
+                ).toFixed(2)
+            )
+    };
+}
+
+
+// ============================================
+// PREPARATION PROGRESS
+// ============================================
+
+function getRacePreparationProgress() {
+    const preparation =
+        getActiveRacePreparation();
+
+    if (!preparation) {
+        return null;
+    }
+
+    const totalDays =
+        getDaysBetween(
+            preparation.createdDate,
+            preparation.targetDate
+        );
+
+    const remainingDays =
+        getDaysBetween(
+            game.career.currentDate,
+            preparation.targetDate
+        );
+
+    if (
+        totalDays === null ||
+        remainingDays === null
+    ) {
+        return null;
+    }
+
+    if (totalDays <= 0) {
+        return {
+            percentage: 100,
+            daysRemaining: 0
+        };
+    }
+
+    const elapsed =
+        totalDays -
+        remainingDays;
+
+    return {
+        percentage:
+            clamp(
+                Math.round(
+                    (
+                        elapsed /
+                        totalDays
+                    ) * 100
+                ),
+                0,
+                100
+            ),
+
+        daysRemaining:
+            Math.max(
+                0,
+                remainingDays
+            ),
+
+        totalDays,
+
+        elapsedDays:
+            Math.max(
+                0,
+                elapsed
+            )
+    };
+}
+
+
+// ============================================
+// TARGET RACE APPROACH
+// ============================================
+
+function isRacePreparationReady() {
+    const preparation =
+        getActiveRacePreparation();
+
+    if (!preparation) {
+        return false;
+    }
+
+    return (
+        !isDateBefore(
+            preparation.targetDate,
+            game.career.currentDate
+        )
+    );
+}
+
+function isRaceDay() {
+    const preparation =
+        getActiveRacePreparation();
+
+    if (!preparation) {
+        return false;
+    }
+
+    return isDateSameDay(
+        game.career.currentDate,
+        preparation.targetDate
+    );
+}
+
+function completeRacePreparation() {
+    const preparation =
+        getActiveRacePreparation();
+
+    if (!preparation) {
+        return null;
+    }
+
+    const readiness =
+        calculateRaceReadiness();
+
+    const completed = {
+        ...preparation,
+
+        status: "Completed",
+
+        completedDate:
+            game.career.currentDate,
+
+        finalReadiness:
+            readiness,
+
+        finalReadinessLevel:
+            getRaceReadinessLevel(
+                readiness
+            ),
+
+        finalCondition:
+            getPlayerPhysicalStatus()
+    };
+
+    racePreparationState.history.push(
+        completed
+    );
+
+    racePreparationState.lastPreparation =
+        completed;
+
+    racePreparationState.activePreparation =
+        null;
+
+    return completed;
+}
+
+
+// ============================================
+// PREPARATION HISTORY
+// ============================================
+
+function getRacePreparationHistory() {
+    return racePreparationState.history;
+}
+
+function getLastRacePreparation() {
+    return racePreparationState.lastPreparation;
+}
+
+
+// ============================================
+// FULL RACE READINESS SUMMARY
+// ============================================
+
+function getRaceReadinessSummary(
+    raceType = "allround"
+) {
+    if (!game.player) {
+        return null;
+    }
+
+    const general =
+        calculateRaceReadiness();
+
+    const raceSpecific =
+        calculateRaceSpecificReadiness(
+            raceType
+        );
+
+    return {
+        generalReadiness:
+            general,
+
+        generalLevel:
+            getRaceReadinessLevel(
+                general
+            ),
+
+        generalDescription:
+            getRaceReadinessDescription(
+                general
+            ),
+
+        raceSpecificReadiness:
+            raceSpecific,
+
+        raceSpecificLevel:
+            getRaceReadinessLevel(
+                raceSpecific
+            ),
+
+        freshness:
+            calculateFreshnessScore(),
+
+        form:
+            game.player.form,
+
+        energy:
+            game.player.energy,
+
+        fatigue:
+            game.player.fatigue,
+
+        experience:
+            calculateExperienceScore(),
+
+        mentalReadiness:
+            calculateMentalReadiness(),
+
+        profileFit:
+            calculateRaceProfileFit(
+                raceType
+            ),
+
+        preparation:
+            getActiveRacePreparation()
+    };
+}
+
+
+// ============================================
+// RESET
+// ============================================
+
+function resetRacePreparationSystem() {
+    racePreparationState.activePreparation =
+        null;
+
+    racePreparationState.history =
+        [];
+
+    racePreparationState.lastPreparation =
+        null;
+}
+
+console.log(
+    "Race Preparation & Race Readiness system loaded."
+);
+// ============================================
+// CYCLING CAREER
+// script.js — Del 16
+// Race Data & Race Structure
+// ============================================
+
+const raceState = {
+    availableRaces: [],
+    selectedRaceId: null,
+    selectedStageId: null
+};
+
+
+// ============================================
+// RACE TYPES
+// ============================================
+
+const raceTypes = {
+    oneDay: {
+        id: "oneDay",
+        name: "One-Day Race",
+        category: "Road"
+    },
+
+    stageRace: {
+        id: "stageRace",
+        name: "Stage Race",
+        category: "Road"
+    },
+
+    grandTour: {
+        id: "grandTour",
+        name: "Grand Tour",
+        category: "Grand Tour"
+    },
+
+    monument: {
+        id: "monument",
+        name: "Monument",
+        category: "Monument"
+    },
+
+    worldsRoad: {
+        id: "worldsRoad",
+        name: "World Championships Road Race",
+        category: "Championship"
+    },
+
+    worldsITT: {
+        id: "worldsITT",
+        name: "World Championships ITT",
+        category: "Championship"
+    },
+
+    nationalsRoad: {
+        id: "nationalsRoad",
+        name: "National Championships Road Race",
+        category: "Championship"
+    },
+
+    nationalsITT: {
+        id: "nationalsITT",
+        name: "National Championships ITT",
+        category: "Championship"
+    }
+};
+
+
+// ============================================
+// RACE LEVELS
+// ============================================
+
+const raceLevels = {
+    grandTour: {
+        name: "Grand Tour",
+        prestige: 100
+    },
+
+    monument: {
+        name: "Monument",
+        prestige: 95
+    },
+
+    worldTour: {
+        name: "WorldTour",
+        prestige: 85
+    },
+
+    proSeries: {
+        name: "ProSeries",
+        prestige: 65
+    },
+
+    continental: {
+        name: "Continental",
+        prestige: 40
+    },
+
+    amateur: {
+        name: "Amateur",
+        prestige: 15
+    }
+};
+
+
+// ============================================
+// TERRAIN TYPES
+// ============================================
+
+const terrainTypes = {
+    flat: {
+        id: "flat",
+        name: "Flat"
+    },
+
+    rolling: {
+        id: "rolling",
+        name: "Rolling"
+    },
+
+    hills: {
+        id: "hills",
+        name: "Hilly"
+    },
+
+    mediumMountain: {
+        id: "mediumMountain",
+        name: "Medium Mountain"
+    },
+
+    mountain: {
+        id: "mountain",
+        name: "Mountain"
+    },
+
+    cobbles: {
+        id: "cobbles",
+        name: "Cobblestones"
+    },
+
+    gravel: {
+        id: "gravel",
+        name: "Gravel"
+    },
+
+    mixed: {
+        id: "mixed",
+        name: "Mixed"
+    },
+
+    itt: {
+        id: "itt",
+        name: "Individual Time Trial"
+    }
+};
+
+
+// ============================================
+// FINISH TYPES
+// ============================================
+
+const finishTypes = {
+    sprint: {
+        id: "sprint",
+        name: "Mass Sprint"
+    },
+
+    uphillSprint: {
+        id: "uphillSprint",
+        name: "Uphill Sprint"
+    },
+
+    reducedSprint: {
+        id: "reducedSprint",
+        name: "Reduced Sprint"
+    },
+
+    punchy: {
+        id: "punchy",
+        name: "Punchy Finish"
+    },
+
+    mountain: {
+        id: "mountain",
+        name: "Mountain Finish"
+    },
+
+    summit: {
+        id: "summit",
+        name: "Summit Finish"
+    },
+
+    descent: {
+        id: "descent",
+        name: "Descent Finish"
+    },
+
+    flatSolo: {
+        id: "flatSolo",
+        name: "Flat Solo Finish"
+    },
+
+    itt: {
+        id: "itt",
+        name: "Time Trial Finish"
+    }
+};
+
+
+// ============================================
+// WEATHER TYPES
+// ============================================
+
+const weatherTypes = {
+    sun: {
+        id: "sun",
+        name: "Sunny"
+    },
+
+    cloudy: {
+        id: "cloudy",
+        name: "Cloudy"
+    },
+
+    rain: {
+        id: "rain",
+        name: "Rain"
+    },
+
+    strongWind: {
+        id: "strongWind",
+        name: "Strong Wind"
+    },
+
+    cold: {
+        id: "cold",
+        name: "Cold"
+    },
+
+    heat: {
+        id: "heat",
+        name: "Heat"
+    },
+
+    fog: {
+        id: "fog",
+        name: "Fog"
+    },
+
+    mixed: {
+        id: "mixed",
+        name: "Changing Weather"
+    }
+};
+
+
+// ============================================
+// RACE FEATURES
+// ============================================
+
+const raceFeatures = {
+    crosswinds: "Crosswinds",
+
+    technicalDescents: "Technical Descents",
+
+    dangerousRoads: "Dangerous Roads",
+
+    gravel: "Gravel",
+
+    cobbles: "Cobblestones",
+
+    longClimbs: "Long Climbs",
+
+    shortClimbs: "Short Climbs",
+
+    technicalFinish: "Technical Finish",
+
+    narrowRoads: "Narrow Roads",
+
+    exposedRoads: "Exposed Roads",
+
+    highAltitude: "High Altitude"
+};
+
+
+// ============================================
+// CLIMB CATEGORIES
+// ============================================
+
+const climbCategories = {
+    category4: {
+        id: "category4",
+        name: "Category 4",
+        difficulty: 1
+    },
+
+    category3: {
+        id: "category3",
+        name: "Category 3",
+        difficulty: 2
+    },
+
+    category2: {
+        id: "category2",
+        name: "Category 2",
+        difficulty: 3
+    },
+
+    category1: {
+        id: "category1",
+        name: "Category 1",
+        difficulty: 4
+    },
+
+    horsCategorie: {
+        id: "horsCategorie",
+        name: "Hors Catégorie",
+        difficulty: 5
+    }
+};
+
+
+// ============================================
+// CLIMB DATA
+// ============================================
+
+function createClimb({
+    id,
+    name,
+    distanceKm,
+    lengthKm,
+    averageGradient,
+    category = "category3",
+    summitKm = null
+}) {
+    if (
+        !id ||
+        !name ||
+        !Number.isFinite(
+            Number(lengthKm)
+        )
+    ) {
+        console.warn(
+            "Invalid climb data."
+        );
+
+        return null;
+    }
+
+    if (
+        !climbCategories[category]
+    ) {
+        console.warn(
+            `Unknown climb category: ${category}`
+        );
+
+        return null;
+    }
+
+    return {
+        id,
+
+        name,
+
+        distanceKm:
+            Number(distanceKm) || 0,
+
+        lengthKm:
+            Number(lengthKm),
+
+        averageGradient:
+            Number(averageGradient) || 0,
+
+        category,
+
+        difficulty:
+            climbCategories[
+                category
+            ].difficulty,
+
+        summitKm:
+            summitKm !== null
+                ? Number(summitKm)
+                : null
+    };
+}
+
+
+// ============================================
+// RACE WEATHER
+// ============================================
+
+function createRaceWeather({
+    type = "sun",
+    temperature = null,
+    windSpeed = null,
+    windDirection = null,
+    rainChance = null,
+    visibility = null,
+    changing = false
+} = {}) {
+    if (!weatherTypes[type]) {
+        console.warn(
+            `Unknown weather type: ${type}`
+        );
+
+        return null;
+    }
+
+    return {
+        type,
+
+        name:
+            weatherTypes[type].name,
+
+        temperature,
+
+        windSpeed,
+
+        windDirection,
+
+        rainChance,
+
+        visibility,
+
+        changing
+    };
+}
+
+
+// ============================================
+// RACE OBJECT
+// ============================================
+
+function createRace({
+    id,
+    name,
+    country,
+    date,
+    type = "oneDay",
+    level = "worldTour",
+    distanceKm = 0,
+    terrain = "mixed",
+    finishType = "sprint",
+    stages = [],
+    climbs = [],
+    features = [],
+    weather = null,
+    startLocation = null,
+    finishLocation = null,
+    description = "",
+    prestige = null
+} = {}) {
+    if (
+        !id ||
+        !name ||
+        !country ||
+        !date
+    ) {
+        console.warn(
+            "Race requires id, name, country and date."
+        );
+
+        return null;
+    }
+
+    if (!raceTypes[type]) {
+        console.warn(
+            `Unknown race type: ${type}`
+        );
+
+        return null;
+    }
+
+    if (!raceLevels[level]) {
+        console.warn(
+            `Unknown race level: ${level}`
+        );
+
+        return null;
+    }
+
+    if (!terrainTypes[terrain]) {
+        console.warn(
+            `Unknown terrain type: ${terrain}`
+        );
+
+        return null;
+    }
+
+    if (!finishTypes[finishType]) {
+        console.warn(
+            `Unknown finish type: ${finishType}`
+        );
+
+        return null;
+    }
+
+    return {
+        id,
+
+        name,
+
+        country,
+
+        date,
+
+        type,
+
+        typeName:
+            raceTypes[type].name,
+
+        level,
+
+        levelName:
+            raceLevels[level].name,
+
+        distanceKm:
+            Number(distanceKm),
+
+        terrain,
+
+        terrainName:
+            terrainTypes[terrain].name,
+
+        finishType,
+
+        finishName:
+            finishTypes[finishType].name,
+
+        stages,
+
+        stageCount:
+            stages.length,
+
+        climbs,
+
+        features,
+
+        weather,
+
+        startLocation,
+
+        finishLocation,
+
+        description,
+
+        prestige:
+            prestige ??
+            raceLevels[level].prestige,
+
+        status: "Available"
+    };
+}
+
+
+// ============================================
+// STAGE OBJECT
+// ============================================
+
+function createStage({
+    id,
+    raceId,
+    number,
+    name,
+    date,
+    distanceKm,
+    terrain = "mixed",
+    finishType = "sprint",
+    climbs = [],
+    features = [],
+    weather = null,
+    startLocation = null,
+    finishLocation = null,
+    description = ""
+} = {}) {
+    if (
+        !id ||
+        !raceId ||
+        !number ||
+        !name ||
+        !date
+    ) {
+        console.warn(
+            "Stage requires id, raceId, number, name and date."
+        );
+
+        return null;
+    }
+
+    if (!terrainTypes[terrain]) {
+        console.warn(
+            `Unknown stage terrain: ${terrain}`
+        );
+
+        return null;
+    }
+
+    if (!finishTypes[finishType]) {
+        console.warn(
+            `Unknown stage finish type: ${finishType}`
+        );
+
+        return null;
+    }
+
+    return {
+        id,
+
+        raceId,
+
+        number,
+
+        name,
+
+        date,
+
+        distanceKm:
+            Number(distanceKm),
+
+        terrain,
+
+        terrainName:
+            terrainTypes[terrain].name,
+
+        finishType,
+
+        finishName:
+            finishTypes[finishType].name,
+
+        climbs,
+
+        features,
+
+        weather,
+
+        startLocation,
+
+        finishLocation,
+
+        description,
+
+        status: "Upcoming"
+    };
+}
+
+
+// ============================================
+// RACE STATE MANAGEMENT
+// ============================================
+
+function addAvailableRace(race) {
+    if (!race) {
+        return false;
+    }
+
+    const existing =
+        raceState.availableRaces.find(
+            item =>
+                item.id === race.id
+        );
+
+    if (existing) {
+        console.warn(
+            `Race already exists: ${race.id}`
+        );
+
+        return false;
+    }
+
+    raceState.availableRaces.push(
+        race
+    );
+
+    sortAvailableRaces();
+
+    return true;
+}
+
+function sortAvailableRaces() {
+    raceState.availableRaces.sort(
+        (a, b) => {
+            const dateDifference =
+                getDaysBetween(
+                    a.date,
+                    b.date
+                );
+
+            if (
+                dateDifference !== null &&
+                dateDifference !== 0
+            ) {
+                return dateDifference;
+            }
+
+            return (
+                b.prestige -
+                a.prestige
+            );
+        }
+    );
+}
+
+function getAvailableRaces() {
+    return raceState.availableRaces;
+}
+
+function getRaceById(raceId) {
+    return raceState.availableRaces.find(
+        race =>
+            race.id === raceId
+    ) || null;
+}
+
+function selectRace(raceId) {
+    const race =
+        getRaceById(raceId);
+
+    if (!race) {
+        console.warn(
+            `Race not found: ${raceId}`
+        );
+
+        return false;
+    }
+
+    raceState.selectedRaceId =
+        raceId;
+
+    raceState.selectedStageId =
+        null;
+
+    return true;
+}
+
+function getSelectedRace() {
+    if (
+        !raceState.selectedRaceId
+    ) {
+        return null;
+    }
+
+    return getRaceById(
+        raceState.selectedRaceId
+    );
+}
+
+function selectStage(stageId) {
+    const race =
+        getSelectedRace();
+
+    if (!race) {
+        return false;
+    }
+
+    const stage =
+        race.stages.find(
+            item =>
+                item.id === stageId
+        );
+
+    if (!stage) {
+        return false;
+    }
+
+    raceState.selectedStageId =
+        stageId;
+
+    return true;
+}
+
+function getSelectedStage() {
+    const race =
+        getSelectedRace();
+
+    if (!race) {
+        return null;
+    }
+
+    return race.stages.find(
+        stage =>
+            stage.id ===
+            raceState.selectedStageId
+    ) || null;
+}
+
+
+// ============================================
+// RACE FILTERS
+// ============================================
+
+function getRacesByType(type) {
+    return raceState.availableRaces.filter(
+        race =>
+            race.type === type
+    );
+}
+
+function getRacesByLevel(level) {
+    return raceState.availableRaces.filter(
+        race =>
+            race.level === level
+    );
+}
+
+function getRacesByTerrain(terrain) {
+    return raceState.availableRaces.filter(
+        race =>
+            race.terrain === terrain
+    );
+}
+
+function getRacesBetweenDates(
+    startDate,
+    endDate
+) {
+    return raceState.availableRaces.filter(
+        race =>
+            !isDateBefore(
+                race.date,
+                startDate
+            ) &&
+            !isDateAfter(
+                race.date,
+                endDate
+            )
+    );
+}
+
+function getUpcomingRaces() {
+    return raceState.availableRaces.filter(
+        race =>
+            !isDateBefore(
+                race.date,
+                game.career.currentDate
+            )
+    );
+}
+
+
+// ============================================
+// RACE SUMMARY
+// ============================================
+
+function getRaceSummary(race) {
+    if (!race) {
+        return null;
+    }
+
+    return {
+        id: race.id,
+
+        name: race.name,
+
+        country: race.country,
+
+        date: race.date,
+
+        type:
+            race.typeName,
+
+        level:
+            race.levelName,
+
+        distanceKm:
+            race.distanceKm,
+
+        terrain:
+            race.terrainName,
+
+        finish:
+            race.finishName,
+
+        stages:
+            race.stageCount,
+
+        prestige:
+            race.prestige,
+
+        features:
+            race.features,
+
+        description:
+            race.description
+    };
+}
+
+function getAllRaceSummaries() {
+    return raceState.availableRaces.map(
+        race =>
+            getRaceSummary(race)
+    );
+}
+
+
+// ============================================
+// RACE STRUCTURE HELPERS
+// ============================================
+
+function isStageRace(race) {
+    if (!race) {
+        return false;
+    }
+
+    return (
+        race.type === "stageRace" ||
+        race.type === "grandTour"
+    );
+}
+
+function isOneDayRace(race) {
+    if (!race) {
+        return false;
+    }
+
+    return (
+        race.type === "oneDay" ||
+        race.type === "monument" ||
+        race.type === "worldsRoad" ||
+        race.type === "nationalsRoad"
+    );
+}
+
+function getRaceStages(race) {
+    if (!race) {
+        return [];
+    }
+
+    return race.stages || [];
+}
+
+function getRaceClimbs(race) {
+    if (!race) {
+        return [];
+    }
+
+    return race.climbs || [];
+}
+
+function getRaceFeatures(race) {
+    if (!race) {
+        return [];
+    }
+
+    return race.features || [];
+}
+
+function hasRaceFeature(
+    race,
+    feature
+) {
+    if (!race) {
+        return false;
+    }
+
+    return race.features.includes(
+        feature
+    );
+}
+
+function hasClimbs(race) {
+    return (
+        !!race &&
+        Array.isArray(race.climbs) &&
+        race.climbs.length > 0
+    );
+}
+
+
+// ============================================
+// RACE DATE / DISTANCE HELPERS
+// ============================================
+
+function getRaceDuration(race) {
+    if (!race) {
+        return 0;
+    }
+
+    if (
+        isStageRace(race)
+    ) {
+        return race.stages.length;
+    }
+
+    return 1;
+}
+
+function getRaceDistance(race) {
+    if (!race) {
+        return 0;
+    }
+
+    if (
+        isStageRace(race) &&
+        race.stages.length
+    ) {
+        return race.stages.reduce(
+            (total, stage) =>
+                total +
+                stage.distanceKm,
+            0
+        );
+    }
+
+    return race.distanceKm;
+}
+
+
+// ============================================
+// PLAYER RACE COMPATIBILITY
+// ============================================
+
+function getRaceCompatibility(
+    race
+) {
+    if (!game.player || !race) {
+        return null;
+    }
+
+    let raceType =
+        "allround";
+
+    if (
+        race.terrain === "flat"
+    ) {
+        raceType = "sprint";
+    }
+
+    if (
+        race.terrain === "hills"
+    ) {
+        raceType = "hill";
+    }
+
+    if (
+        race.terrain ===
+        "mediumMountain"
+    ) {
+        raceType =
+            "mediumMountain";
+    }
+
+    if (
+        race.terrain ===
+        "mountain"
+    ) {
+        raceType =
+            "mountain";
+    }
+
+    if (
+        race.terrain ===
+        "cobbles"
+    ) {
+        raceType =
+            "cobbles";
+    }
+
+    if (
+        race.terrain === "itt"
+    ) {
+        raceType =
+            "itt";
+    }
+
+    if (
+        isStageRace(race)
+    ) {
+        raceType =
+            "stageRace";
+    }
+
+    return {
+        raceType,
+
+        profileFit:
+            calculateRaceProfileFit(
+                raceType
+            ),
+
+        readiness:
+            calculateRaceSpecificReadiness(
+                raceType
+            ),
+
+        finishType:
+            race.finishType,
+
+        terrain:
+            race.terrain
+    };
+}
+
+
+// ============================================
+// RESET
+// ============================================
+
+function resetRaceSystem() {
+    raceState.availableRaces = [];
+
+    raceState.selectedRaceId =
+        null;
+
+    raceState.selectedStageId =
+        null;
+}
+
+console.log(
+    "Race Data & Race Structure system loaded."
+);
+// ============================================
+// CYCLING CAREER
+// script.js — Del 17
+// Race Situations & Dynamic Groups
+// ============================================
+
+const raceSimulationState = {
+    active: false,
+    phase: "Before Race",
+    currentKm: 0,
+    totalKm: 0,
+
+    currentSituation: null,
+    previousSituation: null,
+
+    groups: [],
+    events: [],
+
+    playerGroupId: null,
+    playerPosition: null,
+
+    breakawayAttempts: 0,
+    attacks: 0,
+
+    raceStartedAt: null
+};
+
+
+// ============================================
+// RACE PHASES
+// ============================================
+
+const racePhases = {
+    beforeRace: {
+        id: "beforeRace",
+        name: "Before Race"
+    },
+
+    earlyRace: {
+        id: "earlyRace",
+        name: "Early Race"
+    },
+
+    midRace: {
+        id: "midRace",
+        name: "Mid-Race"
+    },
+
+    finale: {
+        id: "finale",
+        name: "Finale"
+    },
+
+    finish: {
+        id: "finish",
+        name: "Finish"
+    },
+
+    completed: {
+        id: "completed",
+        name: "Completed"
+    }
+};
+
+
+// ============================================
+// GROUP TYPES
+// ============================================
+
+const raceGroupTypes = {
+    peloton: {
+        id: "peloton",
+        name: "Main Peloton"
+    },
+
+    breakaway: {
+        id: "breakaway",
+        name: "Breakaway"
+    },
+
+    chase: {
+        id: "chase",
+        name: "Chase Group"
+    },
+
+    front: {
+        id: "front",
+        name: "Front Group"
+    },
+
+    captain: {
+        id: "captain",
+        name: "Captain Group"
+    },
+
+    rear: {
+        id: "rear",
+        name: "Rear Group"
+    },
+
+    solo: {
+        id: "solo",
+        name: "Solo"
+    }
+};
+
+
+// ============================================
+// SITUATION TYPES
+// ============================================
+
+const raceSituationTypes = {
+    normal: {
+        id: "normal",
+        name: "Normal Racing"
+    },
+
+    breakawayAttempt: {
+        id: "breakawayAttempt",
+        name: "Breakaway Attempt"
+    },
+
+    breakawayFormed: {
+        id: "breakawayFormed",
+        name: "Breakaway Formed"
+    },
+
+    attack: {
+        id: "attack",
+        name: "Attack"
+    },
+
+    chase: {
+        id: "chase",
+        name: "Chase"
+    },
+
+    crosswinds: {
+        id: "crosswinds",
+        name: "Crosswinds"
+    },
+
+    climb: {
+        id: "climb",
+        name: "Climb"
+    },
+
+    descent: {
+        id: "descent",
+        name: "Descent"
+    },
+
+    mechanical: {
+        id: "mechanical",
+        name: "Mechanical"
+    },
+
+    crash: {
+        id: "crash",
+        name: "Crash"
+    },
+
+    positionBattle: {
+        id: "positionBattle",
+        name: "Position Battle"
+    },
+
+    weatherChange: {
+        id: "weatherChange",
+        name: "Weather Change"
+    },
+
+    fatigue: {
+        id: "fatigue",
+        name: "Fatigue"
+    },
+
+    finale: {
+        id: "finale",
+        name: "Finale"
+    }
+};
+
+
+// ============================================
+// GROUP CREATION
+// ============================================
+
+function createRaceGroup({
+    id,
+    type = "peloton",
+    name = null,
+    riders = [],
+    gapSeconds = 0,
+    distanceFromFrontKm = 0,
+    averageStrength = 50,
+    teamCount = 0
+} = {}) {
+    if (!id) {
+        console.warn(
+            "Race group requires an id."
+        );
+
+        return null;
+    }
+
+    if (!raceGroupTypes[type]) {
+        console.warn(
+            `Unknown race group type: ${type}`
+        );
+
+        return null;
+    }
+
+    return {
+        id,
+
+        type,
+
+        name:
+            name ||
+            raceGroupTypes[type].name,
+
+        riders,
+
+        riderCount:
+            riders.length,
+
+        gapSeconds,
+
+        distanceFromFrontKm,
+
+        averageStrength,
+
+        teamCount,
+
+        status: "Active"
+    };
+}
+
+
+// ============================================
+// GROUP MANAGEMENT
+// ============================================
+
+function addRaceGroup(group) {
+    if (!group) {
+        return false;
+    }
+
+    const existing =
+        raceSimulationState.groups.find(
+            item =>
+                item.id === group.id
+        );
+
+    if (existing) {
+        return false;
+    }
+
+    raceSimulationState.groups.push(
+        group
+    );
+
+    return true;
+}
+
+function getRaceGroups() {
+    return raceSimulationState.groups;
+}
+
+function getRaceGroupById(groupId) {
+    return raceSimulationState.groups.find(
+        group =>
+            group.id === groupId
+    ) || null;
+}
+
+function removeRaceGroup(groupId) {
+    const index =
+        raceSimulationState.groups.findIndex(
+            group =>
+                group.id === groupId
+        );
+
+    if (index === -1) {
+        return false;
+    }
+
+    raceSimulationState.groups.splice(
+        index,
+        1
+    );
+
+    if (
+        raceSimulationState.playerGroupId ===
+        groupId
+    ) {
+        raceSimulationState.playerGroupId =
+            null;
+    }
+
+    return true;
+}
+
+
+// ============================================
+// RIDER GROUP ASSIGNMENT
+// ============================================
+
+function addRiderToGroup(
+    groupId,
+    rider
+) {
+    const group =
+        getRaceGroupById(
+            groupId
+        );
+
+    if (!group || !rider) {
+        return false;
+    }
+
+    if (
+        group.riders.includes(
+            rider.id
+        )
+    ) {
+        return false;
+    }
+
+    group.riders.push(
+        rider.id
+    );
+
+    group.riderCount =
+        group.riders.length;
+
+    return true;
+}
+
+function removeRiderFromGroup(
+    groupId,
+    riderId
+) {
+    const group =
+        getRaceGroupById(
+            groupId
+        );
+
+    if (!group) {
+        return false;
+    }
+
+    const index =
+        group.riders.indexOf(
+            riderId
+        );
+
+    if (index === -1) {
+        return false;
+    }
+
+    group.riders.splice(
+        index,
+        1
+    );
+
+    group.riderCount =
+        group.riders.length;
+
+    return true;
+}
+
+function moveRiderBetweenGroups(
+    riderId,
+    fromGroupId,
+    toGroupId
+) {
+    const removed =
+        removeRiderFromGroup(
+            fromGroupId,
+            riderId
+        );
+
+    if (!removed) {
+        return false;
+    }
+
+    const added =
+        addRiderToGroup(
+            toGroupId,
+            {
+                id: riderId
+            }
+        );
+
+    if (!added) {
+        addRiderToGroup(
+            fromGroupId,
+            {
+                id: riderId
+            }
+        );
+
+        return false;
+    }
+
+    return true;
+}
+
+function findRiderGroup(
+    riderId
+) {
+    return raceSimulationState.groups.find(
+        group =>
+            group.riders.includes(
+                riderId
+            )
+    ) || null;
+}
+
+
+// ============================================
+// PLAYER GROUP
+// ============================================
+
+function setPlayerRaceGroup(
+    groupId
+) {
+    const group =
+        getRaceGroupById(
+            groupId
+        );
+
+    if (!group) {
+        return false;
+    }
+
+    raceSimulationState.playerGroupId =
+        groupId;
+
+    return true;
+}
+
+function getPlayerRaceGroup() {
+    if (
+        !raceSimulationState.playerGroupId
+    ) {
+        return null;
+    }
+
+    return getRaceGroupById(
+        raceSimulationState.playerGroupId
+    );
+}
+
+function updatePlayerRaceGroup() {
+    if (!game.player) {
+        return null;
+    }
+
+    const group =
+        findRiderGroup(
+            game.player.id
+        );
+
+    if (!group) {
+        raceSimulationState.playerGroupId =
+            null;
+
+        return null;
+    }
+
+    raceSimulationState.playerGroupId =
+        group.id;
+
+    return group;
+}
+
+
+// ============================================
+// RACE POSITION
+// ============================================
+
+function setPlayerRacePosition(
+    position
+) {
+    const numericPosition =
+        Number(position);
+
+    if (
+        !Number.isFinite(
+            numericPosition
+        ) ||
+        numericPosition < 1
+    ) {
+        return false;
+    }
+
+    raceSimulationState.playerPosition =
+        Math.floor(
+            numericPosition
+        );
+
+    return true;
+}
+
+function getPlayerRacePosition() {
+    return (
+        raceSimulationState
+            .playerPosition ||
+        null
+    );
+}
+
+
+// ============================================
+// SITUATIONS
+// ============================================
+
+function createRaceSituation({
+    id,
+    type = "normal",
+    title,
+    description = "",
+    km = raceSimulationState.currentKm,
+    urgency = "Normal",
+    data = {}
+} = {}) {
+    if (!id || !title) {
+        console.warn(
+            "Race situation requires an id and title."
+        );
+
+        return null;
+    }
+
+    if (!raceSituationTypes[type]) {
+        console.warn(
+            `Unknown race situation type: ${type}`
+        );
+
+        return null;
+    }
+
+    return {
+        id,
+
+        type,
+
+        typeName:
+            raceSituationTypes[type].name,
+
+        title,
+
+        description,
+
+        km,
+
+        urgency,
+
+        data,
+
+        createdAt:
+            game.career.currentDate
+    };
+}
+
+function setCurrentRaceSituation(
+    situation
+) {
+    if (!situation) {
+        return false;
+    }
+
+    raceSimulationState.previousSituation =
+        raceSimulationState.currentSituation;
+
+    raceSimulationState.currentSituation =
+        situation;
+
+    raceSimulationState.events.push(
+        situation
+    );
+
+    return true;
+}
+
+function getCurrentRaceSituation() {
+    return (
+        raceSimulationState
+            .currentSituation ||
+        null
+    );
+}
+
+function getPreviousRaceSituation() {
+    return (
+        raceSimulationState
+            .previousSituation ||
+        null
+    );
+}
+
+function getRaceEvents() {
+    return raceSimulationState.events;
+}
+
+
+// ============================================
+// PHASE MANAGEMENT
+// ============================================
+
+function determineRacePhase(
+    currentKm,
+    totalKm
+) {
+    if (
+        currentKm <= 0
+    ) {
+        return "beforeRace";
+    }
+
+    if (
+        currentKm >= totalKm
+    ) {
+        return "finish";
+    }
+
+    const progress =
+        currentKm /
+        totalKm;
+
+    if (progress < 0.25) {
+        return "earlyRace";
+    }
+
+    if (progress < 0.70) {
+        return "midRace";
+    }
+
+    return "finale";
+}
+
+function updateRacePhase() {
+    raceSimulationState.phase =
+        determineRacePhase(
+            raceSimulationState.currentKm,
+            raceSimulationState.totalKm
+        );
+
+    return raceSimulationState.phase;
+}
+
+function getRacePhaseName(
+    phase =
+        raceSimulationState.phase
+) {
+    return (
+        racePhases[phase]?.name ||
+        "Unknown"
+    );
+}
+
+
+// ============================================
+// RACE DISTANCE
+// ============================================
+
+function setRaceDistance(
+    currentKm,
+    totalKm
+) {
+    const current =
+        Number(currentKm);
+
+    const total =
+        Number(totalKm);
+
+    if (
+        !Number.isFinite(current) ||
+        !Number.isFinite(total) ||
+        total <= 0 ||
+        current < 0
+    ) {
+        return false;
+    }
+
+    raceSimulationState.currentKm =
+        Math.min(
+            current,
+            total
+        );
+
+    raceSimulationState.totalKm =
+        total;
+
+    updateRacePhase();
+
+    return true;
+}
+
+function advanceRaceDistance(
+    kilometers
+) {
+    const distance =
+        Number(kilometers);
+
+    if (
+        !Number.isFinite(distance) ||
+        distance < 0
+    ) {
+        return false;
+    }
+
+    raceSimulationState.currentKm =
+        Math.min(
+            raceSimulationState.currentKm +
+            distance,
+            raceSimulationState.totalKm
+        );
+
+    updateRacePhase();
+
+    return true;
+}
+
+function getRaceProgress() {
+    if (
+        raceSimulationState.totalKm <= 0
+    ) {
+        return 0;
+    }
+
+    return Math.round(
+        (
+            raceSimulationState.currentKm /
+            raceSimulationState.totalKm
+        ) * 100
+    );
+}
+
+function getRemainingRaceDistance() {
+    return Math.max(
+        0,
+        raceSimulationState.totalKm -
+        raceSimulationState.currentKm
+    );
+}
+
+
+// ============================================
+// GROUP GAP MANAGEMENT
+// ============================================
+
+function setGroupGap(
+    groupId,
+    gapSeconds
+) {
+    const group =
+        getRaceGroupById(
+            groupId
+        );
+
+    if (!group) {
+        return false;
+    }
+
+    group.gapSeconds =
+        Math.max(
+            0,
+            Number(gapSeconds) || 0
+        );
+
+    return true;
+}
+
+function changeGroupGap(
+    groupId,
+    seconds
+) {
+    const group =
+        getRaceGroupById(
+            groupId
+        );
+
+    if (!group) {
+        return false;
+    }
+
+    group.gapSeconds =
+        Math.max(
+            0,
+            group.gapSeconds +
+            Number(seconds)
+        );
+
+    return true;
+}
+
+function getGroupGap(
+    groupId
+) {
+    const group =
+        getRaceGroupById(
+            groupId
+        );
+
+    return group
+        ? group.gapSeconds
+        : null;
+}
+
+
+// ============================================
+// BREAKAWAY
+// ============================================
+
+function attemptBreakaway({
+    riders = [],
+    strength = 50
+} = {}) {
+    if (!raceSimulationState.active) {
+        return null;
+    }
+
+    raceSimulationState
+        .breakawayAttempts++;
+
+    const breakaway =
+        createRaceGroup({
+            id:
+                `breakaway-${Date.now()}`,
+
+            type: "breakaway",
+
+            riders,
+
+            gapSeconds: 0,
+
+            distanceFromFrontKm: 0,
+
+            averageStrength:
+                strength
+        });
+
+    if (!breakaway) {
+        return null;
+    }
+
+    addRaceGroup(
+        breakaway
+    );
+
+    const situation =
+        createRaceSituation({
+            id:
+                `situation-breakaway-${Date.now()}`,
+
+            type:
+                "breakawayAttempt",
+
+            title:
+                "Breakaway attempt",
+
+            description:
+                "A group of riders is trying to escape the peloton.",
+
+            urgency: "High",
+
+            data: {
+                riders,
+                groupId:
+                    breakaway.id
+            }
+        });
+
+    setCurrentRaceSituation(
+        situation
+    );
+
+    return breakaway;
+}
+
+function formBreakaway(
+    groupId
+) {
+    const group =
+        getRaceGroupById(
+            groupId
+        );
+
+    if (
+        !group ||
+        group.type !== "breakaway"
+    ) {
+        return false;
+    }
+
+    group.status =
+        "Established";
+
+    setCurrentRaceSituation(
+        createRaceSituation({
+            id:
+                `situation-breakaway-formed-${Date.now()}`,
+
+            type:
+                "breakawayFormed",
+
+            title:
+                "Breakaway established",
+
+            description:
+                "The breakaway has created a meaningful gap from the peloton.",
+
+            urgency:
+                "Normal",
+
+            data: {
+                groupId
+            }
+        })
+    );
+
+    return true;
+}
+
+
+// ============================================
+// ATTACKS
+// ============================================
+
+function createAttack({
+    riderId,
+    fromGroupId,
+    targetGroupId = null,
+    strength = 50
+} = {}) {
+    if (
+        !riderId ||
+        !fromGroupId
+    ) {
+        return null;
+    }
+
+    const fromGroup =
+        getRaceGroupById(
+            fromGroupId
+        );
+
+    if (!fromGroup) {
+        return null;
+    }
+
+    raceSimulationState.attacks++;
+
+    const attack = {
+        id:
+            `attack-${Date.now()}-${randomInt(100, 999)}`,
+
+        riderId,
+
+        fromGroupId,
+
+        targetGroupId,
+
+        strength,
+
+        km:
+            raceSimulationState.currentKm,
+
+        status: "Active"
+    };
+
+    setCurrentRaceSituation(
+        createRaceSituation({
+            id:
+                `situation-attack-${attack.id}`,
+
+            type: "attack",
+
+            title:
+                "Attack",
+
+            description:
+                "A rider has accelerated away from the group.",
+
+            urgency: "High",
+
+            data: attack
+        })
+    );
+
+    return attack;
+}
+
+
+// ============================================
+// CROSSWINDS
+// ============================================
+
+function createCrosswindSituation({
+    severity = "Strong",
+    affectedGroups = []
+} = {}) {
+    const situation =
+        createRaceSituation({
+            id:
+                `situation-crosswind-${Date.now()}`,
+
+            type:
+                "crosswinds",
+
+            title:
+                "Crosswinds",
+
+            description:
+                "Strong crosswinds are creating splits in the race.",
+
+            urgency:
+                severity === "Extreme"
+                    ? "Critical"
+                    : "High",
+
+            data: {
+                severity,
+                affectedGroups
+            }
+        });
+
+    setCurrentRaceSituation(
+        situation
+    );
+
+    return situation;
+}
+
+
+// ============================================
+// CLIMBS
+// ============================================
+
+function createClimbSituation(
+    climb
+) {
+    if (!climb) {
+        return null;
+    }
+
+    const situation =
+        createRaceSituation({
+            id:
+                `situation-climb-${climb.id}-${Date.now()}`,
+
+            type:
+                "climb",
+
+            title:
+                `${climb.name} begins`,
+
+            description:
+                `${climb.lengthKm} km at an average gradient of ${climb.averageGradient}%.`,
+
+            urgency:
+                climb.difficulty >= 4
+                    ? "High"
+                    : "Normal",
+
+            data: {
+                climb
+            }
+        });
+
+    setCurrentRaceSituation(
+        situation
+    );
+
+    return situation;
+}
+
+
+// ============================================
+// DESCENTS
+// ============================================
+
+function createDescentSituation({
+    name = "Descent",
+    technical = false
+} = {}) {
+    const situation =
+        createRaceSituation({
+            id:
+                `situation-descent-${Date.now()}`,
+
+            type:
+                "descent",
+
+            title:
+                technical
+                    ? "Technical descent"
+                    : "Descent",
+
+            description:
+                technical
+                    ? "A technical descent is approaching."
+                    : "The race is entering a descent.",
+
+            urgency:
+                technical
+                    ? "High"
+                    : "Normal",
+
+            data: {
+                name,
+                technical
+            }
+        });
+
+    setCurrentRaceSituation(
+        situation
+    );
+
+    return situation;
+}
+
+
+// ============================================
+// MECHANICALS
+// ============================================
+
+function createMechanicalSituation({
+    riderId,
+    mechanicalType = "Mechanical"
+} = {}) {
+    if (!riderId) {
+        return null;
+    }
+
+    const situation =
+        createRaceSituation({
+            id:
+                `situation-mechanical-${Date.now()}`,
+
+            type:
+                "mechanical",
+
+            title:
+                "Mechanical problem",
+
+            description:
+                "A rider is dealing with a mechanical problem.",
+
+            urgency:
+                "High",
+
+            data: {
+                riderId,
+                mechanicalType
+            }
+        });
+
+    setCurrentRaceSituation(
+        situation
+    );
+
+    return situation;
+}
+
+
+// ============================================
+// CRASHES
+// ============================================
+
+function createCrashSituation({
+    riders = [],
+    severity = "Minor"
+} = {}) {
+    const situation =
+        createRaceSituation({
+            id:
+                `situation-crash-${Date.now()}`,
+
+            type:
+                "crash",
+
+            title:
+                "Crash",
+
+            description:
+                "A crash has disrupted the race and caused a split.",
+
+            urgency:
+                severity === "Major"
+                    ? "Critical"
+                    : "High",
+
+            data: {
+                riders,
+                severity
+            }
+        });
+
+    setCurrentRaceSituation(
+        situation
+    );
+
+    return situation;
+}
+
+
+// ============================================
+// POSITION BATTLE
+// ============================================
+
+function createPositionBattleSituation({
+    position,
+    importance = "Normal"
+} = {}) {
+    const situation =
+        createRaceSituation({
+            id:
+                `situation-position-${Date.now()}`,
+
+            type:
+                "positionBattle",
+
+            title:
+                "Position battle",
+
+            description:
+                "The road is narrowing and riders are fighting for position.",
+
+            urgency:
+                importance === "High"
+                    ? "High"
+                    : "Normal",
+
+            data: {
+                position,
+                importance
+            }
+        });
+
+    setCurrentRaceSituation(
+        situation
+    );
+
+    return situation;
+}
+
+
+// ============================================
+// WEATHER CHANGES
+// ============================================
+
+function createWeatherChangeSituation({
+    from,
+    to,
+    description = ""
+} = {}) {
+    const situation =
+        createRaceSituation({
+            id:
+                `situation-weather-${Date.now()}`,
+
+            type:
+                "weatherChange",
+
+            title:
+                "Weather change",
+
+            description:
+                description ||
+                `Conditions are changing from ${from} to ${to}.`,
+
+            urgency:
+                "Normal",
+
+            data: {
+                from,
+                to
+            }
+        });
+
+    setCurrentRaceSituation(
+        situation
+    );
+
+    return situation;
+}
+
+
+// ============================================
+// FATIGUE SITUATION
+// ============================================
+
+function createFatigueSituation() {
+    if (!game.player) {
+        return null;
+    }
+
+    const situation =
+        createRaceSituation({
+            id:
+                `situation-fatigue-${Date.now()}`,
+
+            type:
+                "fatigue",
+
+            title:
+                "Fatigue is building",
+
+            description:
+                "The accumulated effort is beginning to affect the rider.",
+
+            urgency:
+                game.player.fatigue >= 70
+                    ? "High"
+                    : "Normal",
+
+            data: {
+                energy:
+                    game.player.energy,
+
+                fatigue:
+                    game.player.fatigue
+            }
+        });
+
+    setCurrentRaceSituation(
+        situation
+    );
+
+    return situation;
+}
+
+
+// ============================================
+// RACE INITIALIZATION
+// ============================================
+
+function initializeRaceSimulation(
+    race
+) {
+    if (!race) {
+        console.warn(
+            "Cannot initialize race without race data."
+        );
+
+        return false;
+    }
+
+    const totalDistance =
+        getRaceDistance(race);
+
+    if (
+        totalDistance <= 0
+    ) {
+        console.warn(
+            "Race has no valid distance."
+        );
+
+        return false;
+    }
+
+    raceSimulationState.active =
+        true;
+
+    raceSimulationState.phase =
+        "beforeRace";
+
+    raceSimulationState.currentKm =
+        0;
+
+    raceSimulationState.totalKm =
+        totalDistance;
+
+    raceSimulationState.currentSituation =
+        null;
+
+    raceSimulationState.previousSituation =
+        null;
+
+    raceSimulationState.groups =
+        [];
+
+    raceSimulationState.events =
+        [];
+
+    raceSimulationState.playerGroupId =
+        null;
+
+    raceSimulationState.playerPosition =
+        null;
+
+    raceSimulationState.breakawayAttempts =
+        0;
+
+    raceSimulationState.attacks =
+        0;
+
+    raceSimulationState.raceStartedAt =
+        game.career.currentDate;
+
+    /*
+        The initial peloton is intentionally abstract.
+        Later the World Engine will populate it with
+        actual riders from the race start list.
+    */
+
+    addRaceGroup(
+        createRaceGroup({
+            id: "peloton",
+            type: "peloton",
+            name: "Main Peloton",
+            riders: [],
+            gapSeconds: 0,
+            distanceFromFrontKm: 0,
+            averageStrength: 50
+        })
+    );
+
+    setCurrentRaceSituation(
+        createRaceSituation({
+            id:
+                `situation-start-${Date.now()}`,
+
+            type:
+                "normal",
+
+            title:
+                "Race start",
+
+            description:
+                "The race has started and the peloton is together.",
+
+            urgency:
+                "Normal"
+        })
+    );
+
+    return true;
+}
+
+
+// ============================================
+// RACE START / END
+// ============================================
+
+function startRaceSimulation() {
+    if (
+        !raceSimulationState.active
+    ) {
+        return false;
+    }
+
+    raceSimulationState.phase =
+        "earlyRace";
+
+    return true;
+}
+
+function finishRaceSimulation() {
+    if (
+        !raceSimulationState.active
+    ) {
+        return false;
+    }
+
+    raceSimulationState.currentKm =
+        raceSimulationState.totalKm;
+
+    raceSimulationState.phase =
+        "completed";
+
+    raceSimulationState.active =
+        false;
+
+    setCurrentRaceSituation(
+        createRaceSituation({
+            id:
+                `situation-finish-${Date.now()}`,
+
+            type:
+                "finale",
+
+            title:
+                "Race finished",
+
+            description:
+                "The race has reached the finish.",
+
+            urgency:
+                "Critical"
+        })
+    );
+
+    return true;
+}
+
+
+// ============================================
+// SIMULATION STATE
+// ============================================
+
+function getRaceSimulationState() {
+    return {
+        active:
+            raceSimulationState.active,
+
+        phase:
+            raceSimulationState.phase,
+
+        phaseName:
+            getRacePhaseName(),
+
+        currentKm:
+            raceSimulationState.currentKm,
+
+        totalKm:
+            raceSimulationState.totalKm,
+
+        remainingKm:
+            getRemainingRaceDistance(),
+
+        progress:
+            getRaceProgress(),
+
+        currentSituation:
+            raceSimulationState.currentSituation,
+
+        groups:
+            raceSimulationState.groups,
+
+        playerGroup:
+            getPlayerRaceGroup(),
+
+        playerPosition:
+            raceSimulationState.playerPosition,
+
+        breakawayAttempts:
+            raceSimulationState
+                .breakawayAttempts,
+
+        attacks:
+            raceSimulationState.attacks
+    };
+}
+
+
+// ============================================
+// RESET
+// ============================================
+
+function resetRaceSimulation() {
+    raceSimulationState.active =
+        false;
+
+    raceSimulationState.phase =
+        "Before Race";
+
+    raceSimulationState.currentKm =
+        0;
+
+    raceSimulationState.totalKm =
+        0;
+
+    raceSimulationState.currentSituation =
+        null;
+
+    raceSimulationState.previousSituation =
+        null;
+
+    raceSimulationState.groups =
+        [];
+
+    raceSimulationState.events =
+        [];
+
+    raceSimulationState.playerGroupId =
+        null;
+
+    raceSimulationState.playerPosition =
+        null;
+
+    raceSimulationState.breakawayAttempts =
+        0;
+
+    raceSimulationState.attacks =
+        0;
+
+    raceSimulationState.raceStartedAt =
+        null;
+}
+
+console.log(
+    "Race Situations & Dynamic Groups system loaded."
+);
+// ============================================
+// CYCLING CAREER
+// script.js — Del 18
+// Race Actions & Player Decisions
+// ============================================
+
+const raceActionState = {
+    availableActions: [],
+    selectedAction: null,
+    lastAction: null,
+    actionHistory: []
+};
+
+
+// ============================================
+// ACTION CATEGORIES
+// ============================================
+
+const raceActionCategories = {
+    general: {
+        id: "general",
+        name: "General"
+    },
+
+    attack: {
+        id: "attack",
+        name: "Attack"
+    },
+
+    breakaway: {
+        id: "breakaway",
+        name: "Breakaway"
+    },
+
+    climb: {
+        id: "climb",
+        name: "Climb"
+    },
+
+    finale: {
+        id: "finale",
+        name: "Finale"
+    },
+
+    team: {
+        id: "team",
+        name: "Team"
+    }
+};
+
+
+// ============================================
+// RACE ACTION DEFINITIONS
+// ============================================
+
+const raceActions = {
+    holdPosition: {
+        id: "holdPosition",
+        name: "Hold Position",
+        category: "general",
+        description:
+            "Maintain your current position and avoid unnecessary effort.",
+        energyCost: 1,
+        fatigueCost: 0.5
+    },
+
+    moveForward: {
+        id: "moveForward",
+        name: "Move Forward",
+        category: "general",
+        description:
+            "Move toward the front of the group.",
+        energyCost: 4,
+        fatigueCost: 1.5
+    },
+
+    followWheel: {
+        id: "followWheel",
+        name: "Follow Wheel",
+        category: "general",
+        description:
+            "Stay behind another rider and use their draft.",
+        energyCost: 1.5,
+        fatigueCost: 0.5
+    },
+
+    pull: {
+        id: "pull",
+        name: "Pull",
+        category: "team",
+        description:
+            "Take a turn on the front and contribute to the pace.",
+        energyCost: 6,
+        fatigueCost: 2.5
+    },
+
+    saveEnergy: {
+        id: "saveEnergy",
+        name: "Save Energy",
+        category: "general",
+        description:
+            "Reduce your effort and preserve energy for later.",
+        energyCost: 0,
+        fatigueCost: -1
+    },
+
+    waitForTeam: {
+        id: "waitForTeam",
+        name: "Wait for Team",
+        category: "team",
+        description:
+            "Stay with your teammates and wait for instructions.",
+        energyCost: 0.5,
+        fatigueCost: 0
+    },
+
+    followAttack: {
+        id: "followAttack",
+        name: "Follow Attack",
+        category: "attack",
+        description:
+            "Respond immediately to an attack.",
+        energyCost: 7,
+        fatigueCost: 3
+    },
+
+    closeGap: {
+        id: "closeGap",
+        name: "Close Gap",
+        category: "attack",
+        description:
+            "Spend energy to close the gap to another group.",
+        energyCost: 8,
+        fatigueCost: 3.5
+    },
+
+    letGo: {
+        id: "letGo",
+        name: "Let It Go",
+        category: "attack",
+        description:
+            "Do not respond to the attack and conserve energy.",
+        energyCost: 0,
+        fatigueCost: -0.5
+    },
+
+    counterAttack: {
+        id: "counterAttack",
+        name: "Counterattack",
+        category: "attack",
+        description:
+            "Launch an attack immediately after another rider attacks.",
+        energyCost: 10,
+        fatigueCost: 4.5
+    },
+
+    waitForCaptain: {
+        id: "waitForCaptain",
+        name: "Wait for Captain",
+        category: "team",
+        description:
+            "Stay with the team's leader instead of chasing the move.",
+        energyCost: 0.5,
+        fatigueCost: 0
+    },
+
+    tryJoinBreakaway: {
+        id: "tryJoinBreakaway",
+        name: "Try to Join",
+        category: "breakaway",
+        description:
+            "Attempt to bridge across to the breakaway.",
+        energyCost: 8,
+        fatigueCost: 3.5
+    },
+
+    attackAlone: {
+        id: "attackAlone",
+        name: "Attack Alone",
+        category: "breakaway",
+        description:
+            "Launch a solo move away from the group.",
+        energyCost: 11,
+        fatigueCost: 5
+    },
+
+    waitForMoment: {
+        id: "waitForMoment",
+        name: "Wait for the Right Moment",
+        category: "breakaway",
+        description:
+            "Stay patient and look for a better opportunity.",
+        energyCost: 0,
+        fatigueCost: -0.5
+    },
+
+    stayInPeloton: {
+        id: "stayInPeloton",
+        name: "Stay in Peloton",
+        category: "breakaway",
+        description:
+            "Remain in the main group and avoid unnecessary effort.",
+        energyCost: 1,
+        fatigueCost: 0
+    },
+
+    tempo: {
+        id: "tempo",
+        name: "Tempo",
+        category: "climb",
+        description:
+            "Ride a controlled pace on the climb.",
+        energyCost: 5,
+        fatigueCost: 2
+    },
+
+    followClimb: {
+        id: "followClimb",
+        name: "Follow",
+        category: "climb",
+        description:
+            "Follow the strongest riders on the climb.",
+        energyCost: 7,
+        fatigueCost: 3
+    },
+
+    attackClimb: {
+        id: "attackClimb",
+        name: "Attack",
+        category: "climb",
+        description:
+            "Accelerate away from the group on the climb.",
+        energyCost: 10,
+        fatigueCost: 4.5
+    },
+
+    saveOnClimb: {
+        id: "saveOnClimb",
+        name: "Save Energy",
+        category: "climb",
+        description:
+            "Ride conservatively and protect your energy.",
+        energyCost: 2,
+        fatigueCost: 0.5
+    },
+
+    prepareSprint: {
+        id: "prepareSprint",
+        name: "Prepare Sprint",
+        category: "finale",
+        description:
+            "Move into position and prepare for the sprint.",
+        energyCost: 5,
+        fatigueCost: 2
+    },
+
+    sprint: {
+        id: "sprint",
+        name: "Sprint",
+        category: "finale",
+        description:
+            "Commit to the sprint.",
+        energyCost: 12,
+        fatigueCost: 5
+    },
+
+    attackFinale: {
+        id: "attackFinale",
+        name: "Attack",
+        category: "finale",
+        description:
+            "Make a late attack instead of waiting for the sprint.",
+        energyCost: 10,
+        fatigueCost: 4
+    },
+
+    helpCaptain: {
+        id: "helpCaptain",
+        name: "Help Captain",
+        category: "team",
+        description:
+            "Use your own resources to support the team leader.",
+        energyCost: 7,
+        fatigueCost: 3
+    }
+};
+
+
+// ============================================
+// ACTION CREATION
+// ============================================
+
+function createRaceAction(
+    actionId,
+    context = {}
+) {
+    const definition =
+        raceActions[actionId];
+
+    if (!definition) {
+        console.warn(
+            `Unknown race action: ${actionId}`
+        );
+
+        return null;
+    }
+
+    return {
+        id: definition.id,
+
+        name: definition.name,
+
+        category:
+            definition.category,
+
+        categoryName:
+            raceActionCategories[
+                definition.category
+            ]?.name || "",
+
+        description:
+            definition.description,
+
+        energyCost:
+            definition.energyCost,
+
+        fatigueCost:
+            definition.fatigueCost,
+
+        context
+    };
+}
+
+
+// ============================================
+// ACTION AVAILABILITY
+// ============================================
+
+function getGeneralRaceActions() {
+    return [
+        "holdPosition",
+        "moveForward",
+        "followWheel",
+        "saveEnergy",
+        "waitForTeam"
+    ];
+}
+
+function getAttackRaceActions() {
+    return [
+        "followAttack",
+        "closeGap",
+        "letGo",
+        "counterAttack",
+        "waitForCaptain"
+    ];
+}
+
+function getBreakawayRaceActions() {
+    return [
+        "tryJoinBreakaway",
+        "attackAlone",
+        "waitForMoment",
+        "stayInPeloton"
+    ];
+}
+
+function getClimbRaceActions() {
+    return [
+        "tempo",
+        "followClimb",
+        "attackClimb",
+        "saveOnClimb"
+    ];
+}
+
+function getFinaleRaceActions() {
+    return [
+        "prepareSprint",
+        "sprint",
+        "attackFinale",
+        "closeGap",
+        "helpCaptain"
+    ];
+}
+
+
+// ============================================
+// CONTEXT DETECTION
+// ============================================
+
+function getRaceActionContext() {
+    const situation =
+        getCurrentRaceSituation();
+
+    if (!situation) {
+        return "normal";
+    }
+
+    switch (situation.type) {
+        case "attack":
+            return "attack";
+
+        case "breakawayAttempt":
+        case "breakawayFormed":
+            return "breakaway";
+
+        case "climb":
+            return "climb";
+
+        case "finale":
+            return "finale";
+
+        default:
+            return "normal";
+    }
+}
+
+
+// ============================================
+// TEAM ROLE RESTRICTIONS
+// ============================================
+
+function canUseIndependentAttack() {
+    if (!game.player) {
+        return false;
+    }
+
+    const role =
+        getPlayerTeamRole();
+
+    return [
+        "Captain",
+        "Co-leader",
+        "Secondary leader",
+        "Important rider",
+        "Domestique",
+        "Development rider"
+    ].includes(role);
+}
+
+function canHelpCaptain() {
+    if (!game.player) {
+        return false;
+    }
+
+    const captain =
+        getTeamCaptain();
+
+    if (!captain) {
+        return false;
+    }
+
+    return (
+        captain.id !==
+        game.player.id
+    );
+}
+
+function canSprint() {
+    if (!game.player) {
+        return false;
+    }
+
+    return (
+        raceSimulationState.phase ===
+        "finale" ||
+        raceSimulationState.phase ===
+        "finish"
+    );
+}
+
+
+// ============================================
+// PLAYER CONDITION RESTRICTIONS
+// ============================================
+
+function canAffordRaceAction(
+    actionId
+) {
+    if (!game.player) {
+        return false;
+    }
+
+    const action =
+        raceActions[actionId];
+
+    if (!action) {
+        return false;
+    }
+
+    /*
+        We do not completely forbid actions because
+        a rider can still make a bad decision when
+        exhausted. The check is used to flag risk.
+    */
+
+    return (
+        game.player.energy >=
+        Math.max(
+            0,
+            action.energyCost
+        )
+    );
+}
+
+function getActionRisk(
+    actionId
+) {
+    if (!game.player) {
+        return "Unknown";
+    }
+
+    const action =
+        raceActions[actionId];
+
+    if (!action) {
+        return "Unknown";
+    }
+
+    const energy =
+        game.player.energy;
+
+    const fatigue =
+        game.player.fatigue;
+
+    if (
+        energy < action.energyCost ||
+        fatigue >= 80
+    ) {
+        return "Very High";
+    }
+
+    if (
+        energy < action.energyCost + 10 ||
+        fatigue >= 60
+    ) {
+        return "High";
+    }
+
+    if (
+        energy < action.energyCost + 25 ||
+        fatigue >= 40
+    ) {
+        return "Moderate";
+    }
+
+    return "Low";
+}
+
+
+// ============================================
+// AVAILABLE ACTIONS
+// ============================================
+
+function getAvailableRaceActions() {
+    if (!raceSimulationState.active) {
+        return [];
+    }
+
+    const context =
+        getRaceActionContext();
+
+    let actionIds = [];
+
+    switch (context) {
+        case "attack":
+            actionIds =
+                getAttackRaceActions();
+            break;
+
+        case "breakaway":
+            actionIds =
+                getBreakawayRaceActions();
+            break;
+
+        case "climb":
+            actionIds =
+                getClimbRaceActions();
+            break;
+
+        case "finale":
+            actionIds =
+                getFinaleRaceActions();
+            break;
+
+        default:
+            actionIds =
+                getGeneralRaceActions();
+    }
+
+    /*
+        Team actions can be added when relevant.
+    */
+
+    if (
+        canHelpCaptain() &&
+        !actionIds.includes(
+            "helpCaptain"
+        )
+    ) {
+        actionIds.push(
+            "helpCaptain"
+        );
+    }
+
+    return actionIds
+        .map(
+            actionId =>
+                createRaceAction(
+                    actionId,
+                    {
+                        context,
+
+                        risk:
+                            getActionRisk(
+                                actionId
+                            ),
+
+                        affordable:
+                            canAffordRaceAction(
+                                actionId
+                            )
+                    }
+                )
+        )
+        .filter(Boolean);
+}
+
+
+// ============================================
+// ACTION SELECTION
+// ============================================
+
+function selectRaceAction(
+    actionId
+) {
+    const available =
+        getAvailableRaceActions();
+
+    const action =
+        available.find(
+            item =>
+                item.id === actionId
+        );
+
+    if (!action) {
+        console.warn(
+            `Race action is not currently available: ${actionId}`
+        );
+
+        return false;
+    }
+
+    raceActionState.selectedAction =
+        action;
+
+    return true;
+}
+
+function getSelectedRaceAction() {
+    return (
+        raceActionState.selectedAction ||
+        null
+    );
+}
+
+
+// ============================================
+// ACTION COSTS
+// ============================================
+
+function applyRaceActionCost(
+    action
+) {
+    if (!game.player || !action) {
+        return false;
+    }
+
+    if (
+        action.energyCost > 0
+    ) {
+        consumeEnergy(
+            action.energyCost,
+            `Race action: ${action.name}`
+        );
+    }
+
+    if (
+        action.fatigueCost > 0
+    ) {
+        addFatigue(
+            action.fatigueCost,
+            `Race action: ${action.name}`
+        );
+    }
+
+    if (
+        action.fatigueCost < 0
+    ) {
+        reduceFatigue(
+            Math.abs(
+                action.fatigueCost
+            ),
+            `Race action: ${action.name}`
+        );
+    }
+
+    return true;
+}
+
+
+// ============================================
+// ACTION EFFECTS
+// ============================================
+
+function applyRaceActionEffect(
+    action
+) {
+    if (!action) {
+        return null;
+    }
+
+    const effects = {
+        positionChange: 0,
+        groupChange: null,
+        attack: false,
+        breakaway: false,
+        supportCaptain: false,
+        sprint: false,
+        notes: []
+    };
+
+    switch (action.id) {
+        case "holdPosition":
+            effects.positionChange = 0;
+            effects.notes.push(
+                "Maintained position."
+            );
+            break;
+
+        case "moveForward":
+            effects.positionChange = -5;
+            effects.notes.push(
+                "Moved toward the front."
+            );
+            break;
+
+        case "followWheel":
+            effects.positionChange = -2;
+            effects.notes.push(
+                "Stayed in the draft."
+            );
+            break;
+
+        case "saveEnergy":
+            effects.positionChange = 2;
+            effects.notes.push(
+                "Saved energy."
+            );
+            break;
+
+        case "waitForTeam":
+            effects.positionChange = 1;
+            effects.notes.push(
+                "Stayed with the team."
+            );
+            break;
+
+        case "followAttack":
+            effects.positionChange = -4;
+            effects.notes.push(
+                "Responded to the attack."
+            );
+            break;
+
+        case "closeGap":
+            effects.positionChange = -8;
+            effects.notes.push(
+                "Committed to closing the gap."
+            );
+            break;
+
+        case "letGo":
+            effects.positionChange = 4;
+            effects.notes.push(
+                "Allowed the move to go."
+            );
+            break;
+
+        case "counterAttack":
+            effects.positionChange = -10;
+            effects.attack = true;
+            effects.notes.push(
+                "Launched a counterattack."
+            );
+            break;
+
+        case "waitForCaptain":
+            effects.positionChange = 1;
+            effects.notes.push(
+                "Stayed with the captain."
+            );
+            break;
+
+        case "tryJoinBreakaway":
+            effects.positionChange = -7;
+            effects.breakaway = true;
+            effects.notes.push(
+                "Attempted to bridge to the breakaway."
+            );
+            break;
+
+        case "attackAlone":
+            effects.positionChange = -12;
+            effects.attack = true;
+            effects.breakaway = true;
+            effects.notes.push(
+                "Attacked alone."
+            );
+            break;
+
+        case "waitForMoment":
+            effects.positionChange = 1;
+            effects.notes.push(
+                "Waited for a better moment."
+            );
+            break;
+
+        case "stayInPeloton":
+            effects.positionChange = 1;
+            effects.notes.push(
+                "Stayed in the peloton."
+            );
+            break;
+
+        case "tempo":
+            effects.positionChange = 0;
+            effects.notes.push(
+                "Set a controlled tempo."
+            );
+            break;
+
+        case "followClimb":
+            effects.positionChange = -4;
+            effects.notes.push(
+                "Followed the strongest riders."
+            );
+            break;
+
+        case "attackClimb":
+            effects.positionChange = -9;
+            effects.attack = true;
+            effects.notes.push(
+                "Attacked on the climb."
+            );
+            break;
+
+        case "saveOnClimb":
+            effects.positionChange = 3;
+            effects.notes.push(
+                "Protected energy on the climb."
+            );
+            break;
+
+        case "prepareSprint":
+            effects.positionChange = -6;
+            effects.notes.push(
+                "Moved into sprint position."
+            );
+            break;
+
+        case "sprint":
+            effects.positionChange = -15;
+            effects.sprint = true;
+            effects.notes.push(
+                "Committed to the sprint."
+            );
+            break;
+
+        case "attackFinale":
+            effects.positionChange = -11;
+            effects.attack = true;
+            effects.notes.push(
+                "Attacked in the finale."
+            );
+            break;
+
+        case "helpCaptain":
+            effects.positionChange = 2;
+            effects.supportCaptain = true;
+            effects.notes.push(
+                "Spent resources helping the captain."
+            );
+            break;
+
+        default:
+            effects.notes.push(
+                "Action completed."
+            );
+    }
+
+    return effects;
+}
+
+
+// ============================================
+// EXECUTE ACTION
+// ============================================
+
+function executeRaceAction(
+    actionId
+) {
+    if (!raceSimulationState.active) {
+        console.warn(
+            "Cannot execute race action outside an active race."
+        );
+
+        return null;
+    }
+
+    const available =
+        getAvailableRaceActions();
+
+    const action =
+        available.find(
+            item =>
+                item.id === actionId
+        );
+
+    if (!action) {
+        console.warn(
+            `Action not available: ${actionId}`
+        );
+
+        return null;
+    }
+
+    const conditionBefore = {
+        energy:
+            game.player?.energy ?? null,
+
+        fatigue:
+            game.player?.fatigue ?? null,
+
+        position:
+            raceSimulationState
+                .playerPosition,
+
+        groupId:
+            raceSimulationState
+                .playerGroupId
+    };
+
+    applyRaceActionCost(
+        action
+    );
+
+    const effects =
+        applyRaceActionEffect(
+            action
+        );
+
+    /*
+        Position is abstract at this stage.
+        The later Race Engine will translate
+        this into actual group movement.
+    */
+
+    if (
+        raceSimulationState.playerPosition
+    ) {
+        setPlayerRacePosition(
+            Math.max(
+                1,
+                raceSimulationState
+                    .playerPosition +
+                effects.positionChange
+            )
+        );
+    }
+
+    if (
+        effects.attack
+    ) {
+        createAttack({
+            riderId:
+                game.player?.id,
+
+            fromGroupId:
+                raceSimulationState
+                    .playerGroupId,
+
+            strength:
+                game.player?.stats
+                    ?.acceleration ?? 50
+        });
+    }
+
+    if (
+        effects.breakaway
+    ) {
+        attemptBreakaway({
+            riders: [
+                game.player?.id
+            ],
+
+            strength:
+                game.player?.stats
+                    ?.endurance ?? 50
+        });
+    }
+
+    const result = {
+        action,
+
+        effects,
+
+        conditionBefore,
+
+        conditionAfter: {
+            energy:
+                game.player?.energy ?? null,
+
+            fatigue:
+                game.player?.fatigue ?? null,
+
+            position:
+                raceSimulationState
+                    .playerPosition,
+
+            groupId:
+                raceSimulationState
+                    .playerGroupId
+        },
+
+        km:
+            raceSimulationState
+                .currentKm,
+
+        phase:
+            raceSimulationState.phase,
+
+        date:
+            game.career.currentDate
+    };
+
+    raceActionState.lastAction =
+        result;
+
+    raceActionState.actionHistory.push(
+        result
+    );
+
+    raceActionState.selectedAction =
+        null;
+
+    return result;
+}
+
+
+// ============================================
+// ACTION HISTORY
+// ============================================
+
+function getRaceActionHistory() {
+    return raceActionState.actionHistory;
+}
+
+function getLastRaceAction() {
+    return raceActionState.lastAction;
+}
+
+
+// ============================================
+// PLAYER DECISION SUMMARY
+// ============================================
+
+function getRaceDecisionState() {
+    return {
+        context:
+            getRaceActionContext(),
+
+        availableActions:
+            getAvailableRaceActions(),
+
+        selectedAction:
+            getSelectedRaceAction(),
+
+        lastAction:
+            getLastRaceAction(),
+
+        energy:
+            game.player?.energy ??
+            null,
+
+        fatigue:
+            game.player?.fatigue ??
+            null,
+
+        form:
+            game.player?.form ??
+            null,
+
+        position:
+            getPlayerRacePosition(),
+
+        group:
+            getPlayerRaceGroup()
+    };
+}
+
+
+// ============================================
+// RESET
+// ============================================
+
+function resetRaceActionSystem() {
+    raceActionState.availableActions =
+        [];
+
+    raceActionState.selectedAction =
+        null;
+
+    raceActionState.lastAction =
+        null;
+
+    raceActionState.actionHistory =
+        [];
+}
+
+console.log(
+    "Race Actions & Player Decisions system loaded."
+);
