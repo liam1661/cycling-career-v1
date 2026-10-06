@@ -17584,3 +17584,3381 @@ function resetRaceSituationGeneratorState() {
     raceSituationGeneratorState.situationsSinceDecision = 0;
     raceSituationGeneratorState.lastDecisionKm = null;
 }
+// ============================================
+// CYCLING CAREER
+// script.js — Del 25
+// Race Engine Controller / Decision Loop
+// ============================================
+
+const raceControllerState = {
+    active: false,
+    pausedForDecision: false,
+    raceId: null,
+    raceName: null,
+
+    decisionsMade: 0,
+    situationsHandled: 0,
+
+    currentActionId: null,
+    currentSituationId: null,
+
+    lastDecision: null,
+    lastResolution: null,
+
+    eventLog: [],
+    decisionLog: [],
+
+    raceStartedAt: null,
+    raceFinishedAt: null
+};
+
+
+// ============================================
+// RACE CONTROLLER - BASIC HELPERS
+// ============================================
+
+function getRaceControllerState() {
+    return {
+        ...raceControllerState,
+        eventLog: [...raceControllerState.eventLog],
+        decisionLog: [...raceControllerState.decisionLog]
+    };
+}
+
+
+function isRaceControllerActive() {
+    return raceControllerState.active === true;
+}
+
+
+function isRacePausedForDecision() {
+    return raceControllerState.pausedForDecision === true;
+}
+
+
+function addRaceControllerEvent(type, message, data = {}) {
+    const event = {
+        id: `race-event-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
+        type,
+        message,
+        km: typeof raceSimulationState.currentKm === "number"
+            ? raceSimulationState.currentKm
+            : 0,
+        timestamp: new Date().toISOString(),
+        data
+    };
+
+    raceControllerState.eventLog.push(event);
+
+    return event;
+}
+
+
+function addRaceDecisionLog(actionId, situation, resolution) {
+    const decision = {
+        id: `race-decision-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
+        actionId,
+        situationId: situation?.id || null,
+        situationType: situation?.type || null,
+        km: typeof raceSimulationState.currentKm === "number"
+            ? raceSimulationState.currentKm
+            : 0,
+        resolution: resolution || null,
+        timestamp: new Date().toISOString()
+    };
+
+    raceControllerState.decisionLog.push(decision);
+    raceControllerState.lastDecision = decision;
+
+    return decision;
+}
+
+
+// ============================================
+// PLAYER WORLD RIDER
+// ============================================
+
+function createPlayerRaceWorldRider() {
+    if (!game.player) {
+        return null;
+    }
+
+    const existing = typeof getRaceWorldRider === "function"
+        ? getRaceWorldRider(game.player.id)
+        : null;
+
+    if (existing) {
+        return existing;
+    }
+
+    const rider = {
+        id: game.player.id || `player-${Date.now()}`,
+        name: game.player.name || "Player",
+        teamId: game.team?.id || null,
+        teamName: game.team?.name || "Unknown Team",
+
+        role: game.player.role || "Development rider",
+
+        stats: {
+            ...(game.player.stats || {})
+        },
+
+        energy: typeof game.player.energy === "number"
+            ? game.player.energy
+            : 100,
+
+        fatigue: typeof game.player.fatigue === "number"
+            ? game.player.fatigue
+            : 0,
+
+        form: typeof game.player.form === "number"
+            ? game.player.form
+            : 75,
+
+        raceAction: "maintain",
+        active: true,
+        isPlayer: true
+    };
+
+    if (typeof addRaceWorldRider === "function") {
+        addRaceWorldRider(rider);
+    }
+
+    return rider;
+}
+
+
+// ============================================
+// TEAM / ROLE HELPERS
+// ============================================
+
+function getPlayerRaceRole() {
+    if (typeof getCurrentPlayerRole === "function") {
+        return getCurrentPlayerRole();
+    }
+
+    if (game.player?.role) {
+        return game.player.role;
+    }
+
+    if (game.team?.role) {
+        return game.team.role;
+    }
+
+    return "Development rider";
+}
+
+
+function getPlayerRaceTeam() {
+    return game.team || null;
+}
+
+
+// ============================================
+// RACE INITIALIZATION
+// ============================================
+
+function initializeRaceController(race) {
+    if (!race) {
+        console.error("Cannot initialize race controller without a race.");
+        return false;
+    }
+
+    raceControllerState.active = false;
+    raceControllerState.pausedForDecision = false;
+
+    raceControllerState.raceId = race.id || null;
+    raceControllerState.raceName = race.name || "Unnamed Race";
+
+    raceControllerState.decisionsMade = 0;
+    raceControllerState.situationsHandled = 0;
+
+    raceControllerState.currentActionId = null;
+    raceControllerState.currentSituationId = null;
+
+    raceControllerState.lastDecision = null;
+    raceControllerState.lastResolution = null;
+
+    raceControllerState.eventLog = [];
+    raceControllerState.decisionLog = [];
+
+    raceControllerState.raceStartedAt = new Date().toISOString();
+    raceControllerState.raceFinishedAt = null;
+
+    return true;
+}
+
+
+// ============================================
+// WORLD RIDER SETUP
+// ============================================
+
+function prepareRaceWorld(race) {
+    if (!race) {
+        return false;
+    }
+
+    /*
+        Playeren skal eksistere både i world-rider-systemet
+        og i race-group-systemet.
+    */
+
+    createPlayerRaceWorldRider();
+
+    if (typeof initializeRaceWorld === "function") {
+        initializeRaceWorld(race);
+    }
+
+    /*
+        initializeRaceWorld kan have oprettet world riders.
+        Derfor sørger vi for player bagefter.
+    */
+
+    createPlayerRaceWorldRider();
+
+    if (typeof synchronizeRaceWorld === "function") {
+        synchronizeRaceWorld();
+    }
+
+    return true;
+}
+
+
+// ============================================
+// START RACE
+// ============================================
+
+function startControlledRace(race) {
+    if (!race) {
+        console.error("Cannot start race without a race.");
+        return false;
+    }
+
+    if (raceControllerState.active) {
+        console.warn("A race is already active.");
+        return false;
+    }
+
+    initializeRaceController(race);
+
+    /*
+        Først initialiserer vi den grundlæggende race simulation.
+    */
+
+    if (typeof initializeRaceSimulation === "function") {
+        initializeRaceSimulation(race);
+    }
+
+    /*
+        Derefter opretter vi world riders og synkroniserer dem.
+    */
+
+    prepareRaceWorld(race);
+
+    /*
+        Race simulation skal være aktiv.
+    */
+
+    if (typeof startRaceSimulation === "function") {
+        startRaceSimulation();
+    }
+
+    raceControllerState.active = true;
+
+    addRaceControllerEvent(
+        "race-start",
+        `Race started: ${race.name || "Unnamed Race"}`
+    );
+
+    /*
+        Første situation forsøges genereret.
+    */
+
+    const firstSituation = generateNextRaceControllerSituation();
+
+    if (firstSituation) {
+        prepareRaceDecision(firstSituation);
+    }
+
+    return true;
+}
+
+
+// ============================================
+// SITUATION GENERATION
+// ============================================
+
+function generateNextRaceControllerSituation() {
+    if (!raceControllerState.active) {
+        return null;
+    }
+
+    if (raceControllerState.pausedForDecision) {
+        return raceSimulationState.currentSituation || null;
+    }
+
+    if (typeof generateNextImportantRaceSituation !== "function") {
+        return null;
+    }
+
+    const situation = generateNextImportantRaceSituation();
+
+    if (!situation) {
+        return null;
+    }
+
+    raceControllerState.currentSituationId = situation.id || null;
+
+    return situation;
+}
+
+
+// ============================================
+// DECISION PREPARATION
+// ============================================
+
+function prepareRaceDecision(situation) {
+    if (!situation) {
+        return false;
+    }
+
+    raceControllerState.pausedForDecision = true;
+    raceControllerState.currentSituationId = situation.id || null;
+
+    raceControllerState.situationsHandled += 1;
+
+    addRaceControllerEvent(
+        "decision-required",
+        `Player decision required: ${situation.type || "unknown situation"}`,
+        {
+            situationId: situation.id || null,
+            situationType: situation.type || null
+        }
+    );
+
+    return true;
+}
+
+
+// ============================================
+// AVAILABLE ACTIONS
+// ============================================
+
+function getControllerAvailableRaceActions() {
+    if (!raceControllerState.active) {
+        return [];
+    }
+
+    if (!raceControllerState.pausedForDecision) {
+        return [];
+    }
+
+    if (typeof getAvailableRaceActions !== "function") {
+        return [];
+    }
+
+    return getAvailableRaceActions();
+}
+
+
+// ============================================
+// ACTION VALIDATION
+// ============================================
+
+function canControllerExecuteAction(actionId) {
+    if (!raceControllerState.active) {
+        return false;
+    }
+
+    if (!raceControllerState.pausedForDecision) {
+        return false;
+    }
+
+    if (!actionId) {
+        return false;
+    }
+
+    const actions = getControllerAvailableRaceActions();
+
+    return actions.some(action => {
+        const id = action.id || action.actionId;
+        return id === actionId;
+    });
+}
+
+
+// ============================================
+// EXECUTE PLAYER DECISION
+// ============================================
+
+function executeControlledRaceDecision(actionId) {
+    if (!canControllerExecuteAction(actionId)) {
+        console.warn(`Race action cannot be executed: ${actionId}`);
+        return null;
+    }
+
+    const situation = raceSimulationState.currentSituation || null;
+
+    raceControllerState.currentActionId = actionId;
+
+    /*
+        Først registrerer vi action gennem Del 18.
+    */
+
+    let actionResult = null;
+
+    if (typeof executeRaceAction === "function") {
+        actionResult = executeRaceAction(actionId);
+    }
+
+    /*
+        Derefter lader vi Del 19 afgøre resultatet.
+    */
+
+    let resolution = null;
+
+    if (typeof resolveRaceDecision === "function") {
+        resolution = resolveRaceDecision(actionId);
+    }
+
+    raceControllerState.lastResolution = resolution;
+
+    addRaceDecisionLog(
+        actionId,
+        situation,
+        resolution
+    );
+
+    addRaceControllerEvent(
+        "decision-resolved",
+        `Race decision resolved: ${actionId}`,
+        {
+            actionId,
+            actionResult,
+            resolution
+        }
+    );
+
+    /*
+        Spilleren har nu taget sin beslutning.
+    */
+
+    raceControllerState.decisionsMade += 1;
+    raceControllerState.pausedForDecision = false;
+
+    if (typeof markRaceDecisionMade === "function") {
+        markRaceDecisionMade();
+    }
+
+    /*
+        Synkroniser world/race groups efter beslutningen.
+    */
+
+    if (typeof synchronizeRaceWorld === "function") {
+        synchronizeRaceWorld();
+    }
+
+    return {
+        actionId,
+        actionResult,
+        resolution
+    };
+}
+
+
+// ============================================
+// NORMAL RACE PROGRESSION
+// ============================================
+
+function advanceControlledRace() {
+    if (!raceControllerState.active) {
+        return {
+            success: false,
+            reason: "race-not-active"
+        };
+    }
+
+    if (raceControllerState.pausedForDecision) {
+        return {
+            success: false,
+            reason: "decision-required"
+        };
+    }
+
+    /*
+        World riders reagerer først.
+    */
+
+    if (typeof simulateRaceInteractions === "function") {
+        simulateRaceInteractions();
+    }
+
+    /*
+        Derefter synkroniseres grupperne.
+    */
+
+    if (typeof synchronizeRaceWorld === "function") {
+        synchronizeRaceWorld();
+    }
+
+    /*
+        Så bevæger selve racen sig frem.
+    */
+
+    let progression = null;
+
+    if (typeof advanceRaceProgression === "function") {
+        progression = advanceRaceProgression();
+    }
+
+    /*
+        Hvis progressionen ikke kunne udføres,
+        forsøger vi stadig at se om racen er færdig.
+    */
+
+    if (isControlledRaceFinished()) {
+        finishControlledRace();
+        return {
+            success: true,
+            finished: true,
+            progression
+        };
+    }
+
+    /*
+        Efter progression undersøger vi, om der er
+        kommet en vigtig situation.
+    */
+
+    const situation = generateNextRaceControllerSituation();
+
+    if (situation) {
+        prepareRaceDecision(situation);
+
+        return {
+            success: true,
+            finished: false,
+            decisionRequired: true,
+            situation,
+            progression
+        };
+    }
+
+    return {
+        success: true,
+        finished: false,
+        decisionRequired: false,
+        progression
+    };
+}
+
+
+// ============================================
+// RUN UNTIL DECISION
+// ============================================
+
+function advanceControlledRaceToDecision(maxSteps = 20) {
+    if (!raceControllerState.active) {
+        return {
+            success: false,
+            reason: "race-not-active"
+        };
+    }
+
+    if (raceControllerState.pausedForDecision) {
+        return {
+            success: true,
+            decisionRequired: true,
+            situation: raceSimulationState.currentSituation || null
+        };
+    }
+
+    let steps = 0;
+
+    while (
+        steps < maxSteps &&
+        raceControllerState.active &&
+        !raceControllerState.pausedForDecision
+    ) {
+        const result = advanceControlledRace();
+
+        steps += 1;
+
+        if (!result.success) {
+            break;
+        }
+
+        if (result.finished) {
+            break;
+        }
+
+        if (result.decisionRequired) {
+            break;
+        }
+    }
+
+    return {
+        success: true,
+        steps,
+        decisionRequired: raceControllerState.pausedForDecision,
+        finished: !raceControllerState.active,
+        situation: raceSimulationState.currentSituation || null
+    };
+}
+
+
+// ============================================
+// RACE FINISH CHECK
+// ============================================
+
+function isControlledRaceFinished() {
+    if (!raceSimulationState) {
+        return false;
+    }
+
+    if (raceSimulationState.phase === "finish") {
+        return true;
+    }
+
+    if (raceSimulationState.phase === "completed") {
+        return true;
+    }
+
+    const totalKm = Number(raceSimulationState.totalKm) || 0;
+    const currentKm = Number(raceSimulationState.currentKm) || 0;
+
+    if (totalKm > 0 && currentKm >= totalKm) {
+        return true;
+    }
+
+    return false;
+}
+
+
+// ============================================
+// FINISH RACE
+// ============================================
+
+function finishControlledRace() {
+    if (!raceControllerState.active) {
+        return false;
+    }
+
+    /*
+        Brug den eksisterende race simulation,
+        hvis funktionen findes.
+    */
+
+    if (typeof finishRaceSimulation === "function") {
+        finishRaceSimulation();
+    }
+
+    raceControllerState.active = false;
+    raceControllerState.pausedForDecision = false;
+
+    raceControllerState.raceFinishedAt = new Date().toISOString();
+
+    addRaceControllerEvent(
+        "race-finish",
+        `Race finished: ${raceControllerState.raceName}`
+    );
+
+    /*
+        Sidste synkronisering.
+    */
+
+    if (typeof synchronizeRaceWorld === "function") {
+        synchronizeRaceWorld();
+    }
+
+    return true;
+}
+
+
+// ============================================
+// COMPLETE RACE STEP
+// ============================================
+
+function runControlledRaceStep(actionId = null) {
+    /*
+        Hvis spilleren skal træffe et valg,
+        kræver vi en action.
+    */
+
+    if (raceControllerState.pausedForDecision) {
+        if (!actionId) {
+            return {
+                success: false,
+                reason: "decision-required",
+                actions: getControllerAvailableRaceActions(),
+                situation: raceSimulationState.currentSituation || null
+            };
+        }
+
+        const decision = executeControlledRaceDecision(actionId);
+
+        if (!decision) {
+            return {
+                success: false,
+                reason: "invalid-action"
+            };
+        }
+    }
+
+    /*
+        Efter beslutningen fortsætter racen
+        indtil næste vigtige situation.
+    */
+
+    return advanceControlledRaceToDecision();
+}
+
+
+// ============================================
+// AUTO-ADVANCE
+// ============================================
+
+function runControlledRaceUntilDecision(maxSteps = 20) {
+    if (!raceControllerState.active) {
+        return {
+            success: false,
+            reason: "race-not-active"
+        };
+    }
+
+    return advanceControlledRaceToDecision(maxSteps);
+}
+
+
+// ============================================
+// RACE EVENT LOG
+// ============================================
+
+function getRaceEventLog() {
+    return [...raceControllerState.eventLog];
+}
+
+
+function getRaceDecisionLog() {
+    return [...raceControllerState.decisionLog];
+}
+
+
+function getLatestRaceEvent() {
+    if (raceControllerState.eventLog.length === 0) {
+        return null;
+    }
+
+    return raceControllerState.eventLog[
+        raceControllerState.eventLog.length - 1
+    ];
+}
+
+
+function getLatestRaceDecision() {
+    if (raceControllerState.decisionLog.length === 0) {
+        return null;
+    }
+
+    return raceControllerState.decisionLog[
+        raceControllerState.decisionLog.length - 1
+    ];
+}
+
+
+// ============================================
+// CURRENT RACE DECISION STATE
+// ============================================
+
+function getCurrentRaceDecisionState() {
+    const situation = raceSimulationState.currentSituation || null;
+
+    return {
+        active: raceControllerState.active,
+        pausedForDecision: raceControllerState.pausedForDecision,
+
+        raceId: raceControllerState.raceId,
+        raceName: raceControllerState.raceName,
+
+        currentKm: raceSimulationState.currentKm || 0,
+        totalKm: raceSimulationState.totalKm || 0,
+
+        phase: raceSimulationState.phase || null,
+
+        situation,
+
+        availableActions: getControllerAvailableRaceActions(),
+
+        decisionsMade: raceControllerState.decisionsMade,
+        situationsHandled: raceControllerState.situationsHandled,
+
+        lastDecision: raceControllerState.lastDecision,
+        lastResolution: raceControllerState.lastResolution
+    };
+}
+
+
+// ============================================
+// RACE SUMMARY FOR UI
+// ============================================
+
+function getRaceControllerSummary() {
+    return {
+        active: raceControllerState.active,
+
+        race: {
+            id: raceControllerState.raceId,
+            name: raceControllerState.raceName
+        },
+
+        progress: {
+            currentKm: raceSimulationState.currentKm || 0,
+            totalKm: raceSimulationState.totalKm || 0,
+            phase: raceSimulationState.phase || null
+        },
+
+        decision: {
+            required: raceControllerState.pausedForDecision,
+            situation: raceSimulationState.currentSituation || null,
+            availableActions: getControllerAvailableRaceActions()
+        },
+
+        statistics: {
+            decisionsMade: raceControllerState.decisionsMade,
+            situationsHandled: raceControllerState.situationsHandled
+        },
+
+        lastResolution: raceControllerState.lastResolution
+    };
+}
+
+
+// ============================================
+// RESET
+// ============================================
+
+function resetRaceController() {
+    raceControllerState.active = false;
+    raceControllerState.pausedForDecision = false;
+
+    raceControllerState.raceId = null;
+    raceControllerState.raceName = null;
+
+    raceControllerState.decisionsMade = 0;
+    raceControllerState.situationsHandled = 0;
+
+    raceControllerState.currentActionId = null;
+    raceControllerState.currentSituationId = null;
+
+    raceControllerState.lastDecision = null;
+    raceControllerState.lastResolution = null;
+
+    raceControllerState.eventLog = [];
+    raceControllerState.decisionLog = [];
+
+    raceControllerState.raceStartedAt = null;
+    raceControllerState.raceFinishedAt = null;
+}
+
+
+// ============================================
+// DEBUG / DEVELOPMENT HELPERS
+// ============================================
+
+function debugStartRace(race) {
+    console.log("Starting controlled race:", race);
+
+    const started = startControlledRace(race);
+
+    if (!started) {
+        console.error("Could not start controlled race.");
+        return null;
+    }
+
+    console.log(
+        "Race controller state:",
+        getCurrentRaceDecisionState()
+    );
+
+    return getCurrentRaceDecisionState();
+}
+
+
+function debugRaceStep(actionId = null) {
+    const result = runControlledRaceStep(actionId);
+
+    console.log("Race step result:", result);
+    console.log(
+        "Race state:",
+        getCurrentRaceDecisionState()
+    );
+
+    return result;
+}
+
+
+function debugRaceSummary() {
+    console.log(
+        "Race controller summary:",
+        getRaceControllerSummary()
+    );
+
+    return getRaceControllerSummary();
+}
+// ============================================
+// CYCLING CAREER
+// script.js — Del 26
+// Race Results & Classification Engine
+// ============================================
+
+const raceResultsState = {
+    active: false,
+
+    raceId: null,
+    raceName: null,
+    raceType: null,
+
+    results: [],
+    teamResults: [],
+
+    classifications: {
+        gc: [],
+        points: [],
+        kom: [],
+        youth: []
+    },
+
+    stages: [],
+
+    winner: null,
+    playerResult: null,
+
+    completed: false,
+    createdAt: null
+};
+
+
+// ============================================
+// BASIC HELPERS
+// ============================================
+
+function getRaceResultsState() {
+    return {
+        ...raceResultsState,
+        results: [...raceResultsState.results],
+        teamResults: [...raceResultsState.teamResults],
+        classifications: {
+            gc: [...raceResultsState.classifications.gc],
+            points: [...raceResultsState.classifications.points],
+            kom: [...raceResultsState.classifications.kom],
+            youth: [...raceResultsState.classifications.youth]
+        },
+        stages: [...raceResultsState.stages]
+    };
+}
+
+
+function resetRaceResults() {
+    raceResultsState.active = false;
+
+    raceResultsState.raceId = null;
+    raceResultsState.raceName = null;
+    raceResultsState.raceType = null;
+
+    raceResultsState.results = [];
+    raceResultsState.teamResults = [];
+
+    raceResultsState.classifications = {
+        gc: [],
+        points: [],
+        kom: [],
+        youth: []
+    };
+
+    raceResultsState.stages = [];
+
+    raceResultsState.winner = null;
+    raceResultsState.playerResult = null;
+
+    raceResultsState.completed = false;
+    raceResultsState.createdAt = null;
+}
+
+
+// ============================================
+// RACE TYPE HELPERS
+// ============================================
+
+function isResultsStageRace(race) {
+    if (!race) {
+        return false;
+    }
+
+    if (typeof isStageRace === "function") {
+        return isStageRace(race);
+    }
+
+    return Array.isArray(race.stages) && race.stages.length > 0;
+}
+
+
+function isResultsOneDayRace(race) {
+    if (!race) {
+        return false;
+    }
+
+    if (typeof isOneDayRace === "function") {
+        return isOneDayRace(race);
+    }
+
+    return !isResultsStageRace(race);
+}
+
+
+function isResultsGrandTour(race) {
+    if (!race) {
+        return false;
+    }
+
+    return race.type === "grandTour";
+}
+
+
+function isResultsWorlds(race) {
+    if (!race) {
+        return false;
+    }
+
+    return (
+        race.type === "worldsRoad" ||
+        race.type === "worldsITT"
+    );
+}
+
+
+// ============================================
+// RESULT RIDER CREATION
+// ============================================
+
+function createRaceResultRider(rider, position, totalTime = 0) {
+    if (!rider) {
+        return null;
+    }
+
+    return {
+        position,
+
+        riderId: rider.id || null,
+        riderName: rider.name || "Unknown Rider",
+
+        teamId: rider.teamId || null,
+        teamName: rider.teamName || "Unknown Team",
+
+        country: rider.country || null,
+
+        time: totalTime,
+        gap: 0,
+
+        stagePoints: 0,
+        komPoints: 0,
+
+        isPlayer: rider.isPlayer === true ||
+            rider.id === game.player?.id,
+
+        abandoned: false,
+        penalty: 0
+    };
+}
+
+
+// ============================================
+// RACE WORLD RIDERS
+// ============================================
+
+function getResultsWorldRiders() {
+    if (typeof getActiveRaceWorldRiders === "function") {
+        return getActiveRaceWorldRiders();
+    }
+
+    if (
+        typeof raceWorldState !== "undefined" &&
+        Array.isArray(raceWorldState.riders)
+    ) {
+        return raceWorldState.riders.filter(rider => rider.active !== false);
+    }
+
+    return [];
+}
+
+
+// ============================================
+// RIDER RESULT STRENGTH
+// ============================================
+
+function getResultStat(rider, statName, fallback = 50) {
+    if (!rider) {
+        return fallback;
+    }
+
+    if (
+        rider.stats &&
+        typeof rider.stats[statName] === "number"
+    ) {
+        return rider.stats[statName];
+    }
+
+    if (typeof rider[statName] === "number") {
+        return rider[statName];
+    }
+
+    return fallback;
+}
+
+
+function getRaceResultBaseStrength(rider, race) {
+    if (!rider || !race) {
+        return 50;
+    }
+
+    const sprint = getResultStat(rider, "sprint");
+    const acceleration = getResultStat(rider, "acceleration");
+    const endurance = getResultStat(rider, "endurance");
+    const recovery = getResultStat(rider, "recovery");
+
+    const flat = getResultStat(rider, "flat");
+    const hill = getResultStat(rider, "hill");
+    const mediumMountain = getResultStat(
+        rider,
+        "mediumMountain"
+    );
+    const mountain = getResultStat(rider, "mountain");
+
+    const cobbles = getResultStat(rider, "cobblestones");
+    const itt = getResultStat(rider, "itt");
+
+    const positioning = getResultStat(
+        rider,
+        "positioning"
+    );
+
+    const raceIQ = getResultStat(
+        rider,
+        "raceIQ"
+    );
+
+    const technique = getResultStat(
+        rider,
+        "technique"
+    );
+
+    const mentality = getResultStat(
+        rider,
+        "mentality"
+    );
+
+    let strength = 50;
+
+    const terrain = race.terrain || race.terrainType;
+    const finish = race.finishType || race.finish;
+
+    switch (terrain) {
+        case "flat":
+            strength =
+                flat * 0.30 +
+                sprint * 0.20 +
+                acceleration * 0.10 +
+                endurance * 0.15 +
+                positioning * 0.15 +
+                raceIQ * 0.10;
+            break;
+
+        case "hills":
+        case "rolling":
+            strength =
+                hill * 0.25 +
+                acceleration * 0.15 +
+                endurance * 0.15 +
+                positioning * 0.15 +
+                raceIQ * 0.15 +
+                technique * 0.10 +
+                mentality * 0.05;
+            break;
+
+        case "mediumMountain":
+            strength =
+                mediumMountain * 0.30 +
+                endurance * 0.20 +
+                recovery * 0.15 +
+                raceIQ * 0.15 +
+                mentality * 0.10 +
+                positioning * 0.10;
+            break;
+
+        case "mountain":
+            strength =
+                mountain * 0.35 +
+                endurance * 0.20 +
+                recovery * 0.15 +
+                raceIQ * 0.15 +
+                mentality * 0.10 +
+                positioning * 0.05;
+            break;
+
+        case "cobbles":
+            strength =
+                cobbles * 0.30 +
+                technique * 0.20 +
+                positioning * 0.15 +
+                endurance * 0.15 +
+                acceleration * 0.10 +
+                raceIQ * 0.10;
+            break;
+
+        case "itt":
+            strength =
+                itt * 0.40 +
+                endurance * 0.20 +
+                technique * 0.15 +
+                raceIQ * 0.15 +
+                mentality * 0.10;
+            break;
+
+        default:
+            strength =
+                endurance * 0.20 +
+                raceIQ * 0.15 +
+                positioning * 0.15 +
+                mentality * 0.10 +
+                hill * 0.10 +
+                mountain * 0.10 +
+                flat * 0.10 +
+                sprint * 0.10;
+    }
+
+    /*
+        Finish type just modifies the emphasis.
+    */
+
+    if (finish === "sprint") {
+        strength += sprint * 0.12;
+        strength += acceleration * 0.08;
+    }
+
+    if (finish === "uphillSprint") {
+        strength += hill * 0.10;
+        strength += acceleration * 0.10;
+    }
+
+    if (finish === "mountain" || finish === "summit") {
+        strength += mountain * 0.12;
+        strength += endurance * 0.08;
+    }
+
+    if (finish === "itt") {
+        strength += itt * 0.15;
+    }
+
+    return strength;
+}
+
+
+// ============================================
+// FORM / ENERGY / FATIGUE
+// ============================================
+
+function getResultsFormModifier(rider) {
+    const form = Number(rider?.form);
+
+    if (!Number.isFinite(form)) {
+        return 0;
+    }
+
+    return (form - 75) * 0.20;
+}
+
+
+function getResultsEnergyModifier(rider) {
+    const energy = Number(rider?.energy);
+
+    if (!Number.isFinite(energy)) {
+        return 0;
+    }
+
+    return (energy - 70) * 0.12;
+}
+
+
+function getResultsFatigueModifier(rider) {
+    const fatigue = Number(rider?.fatigue);
+
+    if (!Number.isFinite(fatigue)) {
+        return 0;
+    }
+
+    return -(fatigue * 0.15);
+}
+
+
+// ============================================
+// FINAL RACE STRENGTH
+// ============================================
+
+function calculateFinalRaceResultStrength(rider, race) {
+    const base = getRaceResultBaseStrength(
+        rider,
+        race
+    );
+
+    const form = getResultsFormModifier(rider);
+    const energy = getResultsEnergyModifier(rider);
+    const fatigue = getResultsFatigueModifier(rider);
+
+    /*
+        Lille kontrollerede variationer.
+        Senere kan Race Engine-resultatet give
+        langt mere præcise påvirkninger.
+    */
+
+    const variation =
+        (Math.random() - 0.5) * 8;
+
+    return (
+        base +
+        form +
+        energy +
+        fatigue +
+        variation
+    );
+}
+
+
+// ============================================
+// SORT RIDERS
+// ============================================
+
+function sortRaceResultRiders(riders, race) {
+    return [...riders]
+        .map(rider => ({
+            rider,
+            strength: calculateFinalRaceResultStrength(
+                rider,
+                race
+            )
+        }))
+        .sort((a, b) => b.strength - a.strength)
+        .map(entry => entry.rider);
+}
+
+
+// ============================================
+// BUILD RACE RESULTS
+// ============================================
+
+function buildRaceResults(race) {
+    if (!race) {
+        return [];
+    }
+
+    const worldRiders = getResultsWorldRiders();
+
+    if (worldRiders.length === 0) {
+        console.warn(
+            "No world riders available for results."
+        );
+        return [];
+    }
+
+    const sortedRiders = sortRaceResultRiders(
+        worldRiders,
+        race
+    );
+
+    const results = [];
+
+    sortedRiders.forEach((rider, index) => {
+        const position = index + 1;
+
+        /*
+            Resultatet er endnu ikke baseret på
+            præcise sekunder fra Race Engine.
+            Derfor bruger vi positionen som
+            grundlag for et midlertidigt resultat.
+        */
+
+        const result = createRaceResultRider(
+            rider,
+            position
+        );
+
+        if (!result) {
+            return;
+        }
+
+        results.push(result);
+    });
+
+    /*
+        Winner.
+    */
+
+    if (results.length > 0) {
+        results[0].time = 0;
+    }
+
+    /*
+        Gaps.
+        Disse er relative til vinderen.
+        Senere kommer den rigtige tidsmodel.
+    */
+
+    results.forEach((result, index) => {
+        if (index === 0) {
+            result.gap = 0;
+            return;
+        }
+
+        result.gap = calculateResultGap(
+            index,
+            race
+        );
+    });
+
+    return results;
+}
+
+
+// ============================================
+// GAP CALCULATION
+// ============================================
+
+function calculateResultGap(positionIndex, race) {
+    const distance = Number(race?.distance) || 150;
+
+    let baseGap = 2;
+
+    if (distance > 200) {
+        baseGap = 3;
+    }
+
+    if (distance > 250) {
+        baseGap = 4;
+    }
+
+    const variation =
+        Math.random() * 5;
+
+    return Math.round(
+        baseGap +
+        positionIndex * (0.8 + variation / 10)
+    );
+}
+
+
+// ============================================
+// TEAM RESULTS
+// ============================================
+
+function buildTeamResults(results) {
+    const teams = {};
+
+    results.forEach(result => {
+        const teamId = result.teamId || "unknown";
+
+        if (!teams[teamId]) {
+            teams[teamId] = {
+                teamId,
+                teamName: result.teamName,
+                riders: [],
+                teamTime: 0
+            };
+        }
+
+        teams[teamId].riders.push(result);
+    });
+
+    Object.values(teams).forEach(team => {
+        /*
+            Klassisk holdtid:
+            de tre bedste ryttere tæller.
+        */
+
+        const counted = [...team.riders]
+            .sort((a, b) => a.position - b.position)
+            .slice(0, 3);
+
+        team.teamTime = counted.reduce(
+            (sum, rider) => sum + rider.gap,
+            0
+        );
+    });
+
+    return Object.values(teams)
+        .sort((a, b) => a.teamTime - b.teamTime);
+}
+
+
+// ============================================
+// PLAYER RESULT
+// ============================================
+
+function findPlayerRaceResult(results) {
+    if (!game.player) {
+        return null;
+    }
+
+    return results.find(result =>
+        result.isPlayer === true ||
+        result.riderId === game.player.id
+    ) || null;
+}
+
+
+// ============================================
+// POINTS CLASSIFICATION
+// ============================================
+
+function getPointsForPosition(position, race) {
+    if (!race) {
+        return 0;
+    }
+
+    /*
+        Grundsystem.
+        De præcise pointtabeller for hver
+        officiel race kommer senere fra
+        race-data.
+    */
+
+    const defaultPoints = {
+        1: 100,
+        2: 80,
+        3: 65,
+        4: 55,
+        5: 50,
+        6: 45,
+        7: 40,
+        8: 36,
+        9: 32,
+        10: 28
+    };
+
+    if (defaultPoints[position]) {
+        return defaultPoints[position];
+    }
+
+    if (position <= 20) {
+        return Math.max(
+            2,
+            25 - position
+        );
+    }
+
+    return 0;
+}
+
+
+function calculatePointsClassification(results, race) {
+    return results
+        .map(result => ({
+            riderId: result.riderId,
+            riderName: result.riderName,
+            teamId: result.teamId,
+            teamName: result.teamName,
+            points: getPointsForPosition(
+                result.position,
+                race
+            )
+        }))
+        .sort((a, b) => b.points - a.points);
+}
+
+
+// ============================================
+// KOM CLASSIFICATION
+// ============================================
+
+function calculateKomClassification(results, race) {
+    if (!race?.climbs || race.climbs.length === 0) {
+        return [];
+    }
+
+    const classification = results.map(result => ({
+        riderId: result.riderId,
+        riderName: result.riderName,
+        teamId: result.teamId,
+        teamName: result.teamName,
+        points: 0
+    }));
+
+    /*
+        Første version:
+        mountain-specialists får mere KOM-potentiale.
+        Den rigtige model kommer når vi simulerer
+        hver enkelt climb.
+    */
+
+    classification.forEach(entry => {
+        const rider = getResultsWorldRiders()
+            .find(r => r.id === entry.riderId);
+
+        if (!rider) {
+            return;
+        }
+
+        const mountain = getResultStat(
+            rider,
+            "mountain"
+        );
+
+        const mediumMountain = getResultStat(
+            rider,
+            "mediumMountain"
+        );
+
+        entry.points = Math.round(
+            mountain * 0.7 +
+            mediumMountain * 0.3
+        );
+    });
+
+    return classification.sort(
+        (a, b) => b.points - a.points
+    );
+}
+
+
+// ============================================
+// YOUTH CLASSIFICATION
+// ============================================
+
+function getRiderAgeForResults(rider) {
+    if (!rider) {
+        return 99;
+    }
+
+    if (typeof rider.age === "number") {
+        return rider.age;
+    }
+
+    if (
+        rider.dateOfBirth &&
+        typeof getCurrentDate === "function"
+    ) {
+        const currentDate = new Date(
+            getCurrentDate()
+        );
+
+        const birthDate = new Date(
+            rider.dateOfBirth
+        );
+
+        let age =
+            currentDate.getFullYear() -
+            birthDate.getFullYear();
+
+        const birthdayPassed =
+            currentDate.getMonth() > birthDate.getMonth() ||
+            (
+                currentDate.getMonth() === birthDate.getMonth() &&
+                currentDate.getDate() >= birthDate.getDate()
+            );
+
+        if (!birthdayPassed) {
+            age -= 1;
+        }
+
+        return age;
+    }
+
+    return 99;
+}
+
+
+function calculateYouthClassification(results) {
+    return results
+        .filter(result => {
+            const rider = getResultsWorldRiders()
+                .find(r => r.id === result.riderId);
+
+            return getRiderAgeForResults(rider) <= 25;
+        })
+        .sort((a, b) =>
+            a.position - b.position
+        )
+        .map((result, index) => ({
+            ...result,
+            youthPosition: index + 1
+        }));
+}
+
+
+// ============================================
+// GENERAL CLASSIFICATION
+// ============================================
+
+function calculateGeneralClassification(results) {
+    return [...results]
+        .filter(result => !result.abandoned)
+        .sort((a, b) => {
+            if (a.time !== b.time) {
+                return a.time - b.time;
+            }
+
+            return a.position - b.position;
+        })
+        .map((result, index) => ({
+            ...result,
+            gcPosition: index + 1
+        }));
+}
+
+
+// ============================================
+// COMPLETE RESULT SET
+// ============================================
+
+function generateRaceResultSet(race) {
+    if (!race) {
+        console.error(
+            "Cannot generate results without race."
+        );
+        return null;
+    }
+
+    resetRaceResults();
+
+    raceResultsState.active = true;
+    raceResultsState.raceId = race.id || null;
+    raceResultsState.raceName =
+        race.name || "Unnamed Race";
+    raceResultsState.raceType =
+        race.type || null;
+    raceResultsState.createdAt =
+        new Date().toISOString();
+
+    const results = buildRaceResults(race);
+
+    raceResultsState.results = results;
+
+    raceResultsState.teamResults =
+        buildTeamResults(results);
+
+    raceResultsState.winner =
+        results.length > 0
+            ? results[0]
+            : null;
+
+    raceResultsState.playerResult =
+        findPlayerRaceResult(results);
+
+    raceResultsState.classifications.points =
+        calculatePointsClassification(
+            results,
+            race
+        );
+
+    raceResultsState.classifications.kom =
+        calculateKomClassification(
+            results,
+            race
+        );
+
+    raceResultsState.classifications.youth =
+        calculateYouthClassification(
+            results
+        );
+
+    raceResultsState.classifications.gc =
+        calculateGeneralClassification(
+            results
+        );
+
+    raceResultsState.completed = true;
+
+    return getRaceResultsState();
+}
+
+
+// ============================================
+// STAGE RESULT
+// ============================================
+
+function createStageResult(race, stageNumber = 1) {
+    if (!race) {
+        return null;
+    }
+
+    const stage = Array.isArray(race.stages)
+        ? race.stages[stageNumber - 1]
+        : null;
+
+    if (!stage) {
+        console.warn(
+            `Stage ${stageNumber} does not exist.`
+        );
+        return null;
+    }
+
+    const stageResults =
+        buildRaceResults(stage);
+
+    const stageData = {
+        stageNumber,
+        stageId: stage.id || null,
+        stageName:
+            stage.name ||
+            `Stage ${stageNumber}`,
+
+        distance: stage.distance || null,
+
+        results: stageResults,
+
+        winner:
+            stageResults.length > 0
+                ? stageResults[0]
+                : null
+    };
+
+    raceResultsState.stages.push(stageData);
+
+    return stageData;
+}
+
+
+// ============================================
+// STAGE RACE GC
+// ============================================
+
+function buildStageRaceGC(stages) {
+    if (!Array.isArray(stages) || stages.length === 0) {
+        return [];
+    }
+
+    const riderTotals = {};
+
+    stages.forEach(stage => {
+        stage.results.forEach(result => {
+            if (!riderTotals[result.riderId]) {
+                riderTotals[result.riderId] = {
+                    riderId: result.riderId,
+                    riderName: result.riderName,
+                    teamId: result.teamId,
+                    teamName: result.teamName,
+                    time: 0,
+                    stages: 0
+                };
+            }
+
+            riderTotals[result.riderId].time +=
+                result.gap;
+
+            riderTotals[result.riderId].stages += 1;
+        });
+    });
+
+    return Object.values(riderTotals)
+        .sort((a, b) => {
+            if (a.time !== b.time) {
+                return a.time - b.time;
+            }
+
+            return b.stages - a.stages;
+        })
+        .map((result, index) => ({
+            ...result,
+            position: index + 1
+        }));
+}
+
+
+// ============================================
+// RACE COMPLETION
+// ============================================
+
+function completeRaceResults(race) {
+    if (!race) {
+        return null;
+    }
+
+    /*
+        One-day race.
+    */
+
+    if (isResultsOneDayRace(race)) {
+        return generateRaceResultSet(race);
+    }
+
+    /*
+        Stage race.
+        Vi bygger første stage her.
+        Flere stages kobles på senere gennem
+        stage-race controlleren.
+    */
+
+    if (isResultsStageRace(race)) {
+        resetRaceResults();
+
+        raceResultsState.active = true;
+        raceResultsState.raceId = race.id || null;
+        raceResultsState.raceName =
+            race.name || "Unnamed Stage Race";
+        raceResultsState.raceType =
+            race.type || null;
+        raceResultsState.createdAt =
+            new Date().toISOString();
+
+        const firstStage =
+            createStageResult(race, 1);
+
+        if (firstStage) {
+            raceResultsState.classifications.gc =
+                buildStageRaceGC(
+                    raceResultsState.stages
+                );
+
+            raceResultsState.playerResult =
+                findPlayerRaceResult(
+                    firstStage.results
+                );
+        }
+
+        raceResultsState.completed = true;
+
+        return getRaceResultsState();
+    }
+
+    return generateRaceResultSet(race);
+}
+
+
+// ============================================
+// PLAYER RESULT SUMMARY
+// ============================================
+
+function getPlayerRaceResultSummary() {
+    const result =
+        raceResultsState.playerResult;
+
+    if (!result) {
+        return null;
+    }
+
+    return {
+        position: result.position || null,
+        gcPosition: result.gcPosition || null,
+
+        riderId: result.riderId,
+        riderName: result.riderName,
+
+        teamName: result.teamName,
+
+        gap: result.gap,
+        time: result.time,
+
+        points: result.stagePoints || 0,
+        komPoints: result.komPoints || 0,
+
+        abandoned: result.abandoned === true
+    };
+}
+
+
+// ============================================
+// RESULT LOOKUPS
+// ============================================
+
+function getRaceResultByPosition(position) {
+    return raceResultsState.results.find(
+        result => result.position === position
+    ) || null;
+}
+
+
+function getRaceResultByRiderId(riderId) {
+    return raceResultsState.results.find(
+        result => result.riderId === riderId
+    ) || null;
+}
+
+
+function getRaceWinner() {
+    return raceResultsState.winner;
+}
+
+
+function getRaceTopTen() {
+    return raceResultsState.results
+        .slice(0, 10);
+}
+
+
+function getRaceTeamResults() {
+    return [...raceResultsState.teamResults];
+}
+
+
+function getCurrentRaceClassifications() {
+    return {
+        gc: [...raceResultsState.classifications.gc],
+        points: [...raceResultsState.classifications.points],
+        kom: [...raceResultsState.classifications.kom],
+        youth: [...raceResultsState.classifications.youth]
+    };
+}
+
+
+// ============================================
+// RESULT SUMMARY FOR UI
+// ============================================
+
+function getRaceResultsSummary() {
+    return {
+        raceId: raceResultsState.raceId,
+        raceName: raceResultsState.raceName,
+        raceType: raceResultsState.raceType,
+
+        completed: raceResultsState.completed,
+
+        winner: raceResultsState.winner,
+
+        player: raceResultsState.playerResult,
+
+        topTen: getRaceTopTen(),
+
+        teamResults: raceResultsState.teamResults,
+
+        classifications:
+            getCurrentRaceClassifications(),
+
+        stages: [...raceResultsState.stages]
+    };
+}
+
+
+// ============================================
+// CAREER HISTORY BRIDGE
+// ============================================
+
+function createRaceHistoryEntry(race, resultsState) {
+    if (!race || !resultsState) {
+        return null;
+    }
+
+    const playerResult =
+        resultsState.playerResult;
+
+    return {
+        type: "race-result",
+
+        raceId: race.id || null,
+        raceName:
+            race.name || "Unnamed Race",
+
+        raceType: race.type || null,
+
+        date:
+            typeof getCurrentDate === "function"
+                ? getCurrentDate()
+                : game.career.currentDate,
+
+        playerPosition:
+            playerResult?.position || null,
+
+        playerGap:
+            playerResult?.gap || 0,
+
+        winnerId:
+            resultsState.winner?.riderId || null,
+
+        winnerName:
+            resultsState.winner?.riderName || null,
+
+        teamName:
+            playerResult?.teamName || null
+    };
+}
+
+
+function saveRaceResultToCareerHistory(race) {
+    if (!race || !raceResultsState.completed) {
+        return null;
+    }
+
+    const entry =
+        createRaceHistoryEntry(
+            race,
+            raceResultsState
+        );
+
+    if (!entry) {
+        return null;
+    }
+
+    /*
+        Del 7 forventer allerede addHistoryEntry().
+        Hvis den ikke findes endnu, gemmer vi ikke
+        noget i history-arrayet endnu.
+    */
+
+    if (typeof addHistoryEntry === "function") {
+        return addHistoryEntry(entry);
+    }
+
+    if (Array.isArray(game.history)) {
+        game.history.push(entry);
+        return entry;
+    }
+
+    return null;
+}
+
+
+// ============================================
+// WORLD RESULT BRIDGE
+// ============================================
+
+function applyRaceResultsToWorld() {
+    if (!raceResultsState.completed) {
+        return false;
+    }
+
+    const results = raceResultsState.results;
+
+    if (!Array.isArray(results)) {
+        return false;
+    }
+
+    results.forEach(result => {
+        if (
+            typeof getRaceWorldRider === "function"
+        ) {
+            const rider =
+                getRaceWorldRider(result.riderId);
+
+            if (!rider) {
+                return;
+            }
+
+            rider.lastRacePosition =
+                result.position;
+
+            rider.lastRaceGap =
+                result.gap;
+
+            rider.lastRaceId =
+                raceResultsState.raceId;
+        }
+    });
+
+    return true;
+}
+
+
+// ============================================
+// FULL RACE RESULT PIPELINE
+// ============================================
+
+function finalizeRaceWithResults(race) {
+    if (!race) {
+        console.error(
+            "Cannot finalize race without race."
+        );
+        return null;
+    }
+
+    const results =
+        completeRaceResults(race);
+
+    if (!results) {
+        return null;
+    }
+
+    applyRaceResultsToWorld();
+
+    saveRaceResultToCareerHistory(race);
+
+    return getRaceResultsSummary();
+}
+
+
+// ============================================
+// DEBUG HELPERS
+// ============================================
+
+function debugGenerateRaceResults(race) {
+    const result =
+        finalizeRaceWithResults(race);
+
+    console.log(
+        "Race results:",
+        result
+    );
+
+    return result;
+}
+
+
+function debugShowRaceTopTen() {
+    const topTen =
+        getRaceTopTen();
+
+    console.table(topTen);
+
+    return topTen;
+}
+
+
+function debugShowPlayerRaceResult() {
+    const result =
+        getPlayerRaceResultSummary();
+
+    console.log(
+        "Player race result:",
+        result
+    );
+
+    return result;
+}
+// ============================================
+// CYCLING CAREER
+// script.js — Del 27
+// Stage Race Engine
+// ============================================
+
+const stageRaceState = {
+    active: false,
+
+    raceId: null,
+    raceName: null,
+    raceType: null,
+
+    currentStageNumber: 0,
+    totalStages: 0,
+
+    completedStages: [],
+    currentStage: null,
+
+    generalClassification: [],
+    pointsClassification: [],
+    komClassification: [],
+    youthClassification: [],
+
+    jerseys: {
+        gc: null,
+        points: null,
+        kom: null,
+        youth: null
+    },
+
+    player: {
+        currentStageResult: null,
+        gcPosition: null,
+        pointsPosition: null,
+        komPosition: null,
+        youthPosition: null
+    },
+
+    finished: false,
+    startedAt: null,
+    finishedAt: null
+};
+
+
+// ============================================
+// STATE HELPERS
+// ============================================
+
+function getStageRaceState() {
+    return {
+        ...stageRaceState,
+
+        completedStages: [...stageRaceState.completedStages],
+
+        generalClassification: [
+            ...stageRaceState.generalClassification
+        ],
+
+        pointsClassification: [
+            ...stageRaceState.pointsClassification
+        ],
+
+        komClassification: [
+            ...stageRaceState.komClassification
+        ],
+
+        youthClassification: [
+            ...stageRaceState.youthClassification
+        ],
+
+        jerseys: {
+            ...stageRaceState.jerseys
+        },
+
+        player: {
+            ...stageRaceState.player
+        }
+    };
+}
+
+
+function resetStageRaceState() {
+    stageRaceState.active = false;
+
+    stageRaceState.raceId = null;
+    stageRaceState.raceName = null;
+    stageRaceState.raceType = null;
+
+    stageRaceState.currentStageNumber = 0;
+    stageRaceState.totalStages = 0;
+
+    stageRaceState.completedStages = [];
+    stageRaceState.currentStage = null;
+
+    stageRaceState.generalClassification = [];
+    stageRaceState.pointsClassification = [];
+    stageRaceState.komClassification = [];
+    stageRaceState.youthClassification = [];
+
+    stageRaceState.jerseys = {
+        gc: null,
+        points: null,
+        kom: null,
+        youth: null
+    };
+
+    stageRaceState.player = {
+        currentStageResult: null,
+        gcPosition: null,
+        pointsPosition: null,
+        komPosition: null,
+        youthPosition: null
+    };
+
+    stageRaceState.finished = false;
+
+    stageRaceState.startedAt = null;
+    stageRaceState.finishedAt = null;
+}
+
+
+// ============================================
+// STAGE ACCESS
+// ============================================
+
+function getStageRaceStages(race) {
+    if (!race || !Array.isArray(race.stages)) {
+        return [];
+    }
+
+    return race.stages;
+}
+
+
+function getStageRaceStageCount(race) {
+    return getStageRaceStages(race).length;
+}
+
+
+function getStageRaceStage(race, stageNumber) {
+    const stages = getStageRaceStages(race);
+
+    if (
+        stageNumber < 1 ||
+        stageNumber > stages.length
+    ) {
+        return null;
+    }
+
+    return stages[stageNumber - 1];
+}
+
+
+function getCurrentStageRaceStage() {
+    return stageRaceState.currentStage;
+}
+
+
+function isLastStageRaceStage() {
+    return (
+        stageRaceState.currentStageNumber >=
+        stageRaceState.totalStages
+    );
+}
+
+
+// ============================================
+// START STAGE RACE
+// ============================================
+
+function startStageRace(race) {
+    if (!race) {
+        console.error(
+            "Cannot start stage race without race."
+        );
+
+        return false;
+    }
+
+    const stages =
+        getStageRaceStages(race);
+
+    if (stages.length === 0) {
+        console.error(
+            "Stage race has no stages."
+        );
+
+        return false;
+    }
+
+    resetStageRaceState();
+
+    stageRaceState.active = true;
+
+    stageRaceState.raceId =
+        race.id || null;
+
+    stageRaceState.raceName =
+        race.name || "Unnamed Stage Race";
+
+    stageRaceState.raceType =
+        race.type || "stageRace";
+
+    stageRaceState.totalStages =
+        stages.length;
+
+    stageRaceState.currentStageNumber = 1;
+
+    stageRaceState.startedAt =
+        new Date().toISOString();
+
+    stageRaceState.currentStage =
+        getStageRaceStage(
+            race,
+            1
+        );
+
+    /*
+        Klassementerne starter tomme.
+        Første etape opretter det første resultat.
+    */
+
+    stageRaceState.generalClassification = [];
+    stageRaceState.pointsClassification = [];
+    stageRaceState.komClassification = [];
+    stageRaceState.youthClassification = [];
+
+    return true;
+}
+
+
+// ============================================
+// STAGE RESULT
+// ============================================
+
+function generateCurrentStageResult(race) {
+    if (!stageRaceState.active) {
+        return null;
+    }
+
+    const stage =
+        getStageRaceStage(
+            race,
+            stageRaceState.currentStageNumber
+        );
+
+    if (!stage) {
+        return null;
+    }
+
+    /*
+        Vi bruger den eksisterende race-resultatmotor
+        til selve etapen.
+    */
+
+    const stageResults =
+        buildRaceResults(stage);
+
+    if (!stageResults.length) {
+        return null;
+    }
+
+    const stageData = {
+        stageNumber:
+            stageRaceState.currentStageNumber,
+
+        stageId:
+            stage.id || null,
+
+        stageName:
+            stage.name ||
+            `Stage ${stageRaceState.currentStageNumber}`,
+
+        distance:
+            stage.distance || 0,
+
+        terrain:
+            stage.terrain || null,
+
+        finishType:
+            stage.finishType || null,
+
+        results: stageResults,
+
+        winner:
+            stageResults[0] || null
+    };
+
+    stageRaceState.currentStage = stageData;
+
+    return stageData;
+}
+
+
+// ============================================
+// STAGE TIME
+// ============================================
+
+function getStageRiderTime(result) {
+    if (!result) {
+        return 0;
+    }
+
+    if (
+        typeof result.stageTime === "number"
+    ) {
+        return result.stageTime;
+    }
+
+    if (
+        typeof result.time === "number"
+    ) {
+        return result.time;
+    }
+
+    return 0;
+}
+
+
+// ============================================
+// GENERAL CLASSIFICATION
+// ============================================
+
+function updateGeneralClassification() {
+    const totals = {};
+
+    stageRaceState.completedStages.forEach(
+        stage => {
+            stage.results.forEach(
+                result => {
+                    if (!totals[result.riderId]) {
+                        totals[result.riderId] = {
+                            riderId: result.riderId,
+                            riderName: result.riderName,
+                            teamId: result.teamId,
+                            teamName: result.teamName,
+
+                            time: 0,
+                            stages: 0,
+
+                            stageWins: 0,
+                            penalties: 0
+                        };
+                    }
+
+                    totals[result.riderId].time +=
+                        getStageRiderTime(result);
+
+                    totals[result.riderId].stages += 1;
+
+                    if (result.position === 1) {
+                        totals[result.riderId]
+                            .stageWins += 1;
+                    }
+
+                    totals[result.riderId].penalties +=
+                        Number(result.penalty) || 0;
+                }
+            );
+        }
+    );
+
+    const classification =
+        Object.values(totals)
+            .map(rider => ({
+                ...rider,
+
+                time:
+                    rider.time +
+                    rider.penalties
+            }))
+            .sort((a, b) => {
+                if (a.time !== b.time) {
+                    return a.time - b.time;
+                }
+
+                return b.stageWins - a.stageWins;
+            })
+            .map((rider, index) => ({
+                ...rider,
+                position: index + 1
+            }));
+
+    stageRaceState.generalClassification =
+        classification;
+
+    return classification;
+}
+
+
+// ============================================
+// STAGE POINTS
+// ============================================
+
+function updatePointsClassification(race) {
+    const totals = {};
+
+    stageRaceState.completedStages.forEach(
+        stage => {
+            stage.results.forEach(
+                result => {
+                    if (!totals[result.riderId]) {
+                        totals[result.riderId] = {
+                            riderId: result.riderId,
+                            riderName: result.riderName,
+                            teamId: result.teamId,
+                            teamName: result.teamName,
+                            points: 0
+                        };
+                    }
+
+                    totals[result.riderId].points +=
+                        getPointsForPosition(
+                            result.position,
+                            race
+                        );
+                }
+            );
+        }
+    );
+
+    const classification =
+        Object.values(totals)
+            .sort((a, b) =>
+                b.points - a.points
+            )
+            .map((rider, index) => ({
+                ...rider,
+                position: index + 1
+            }));
+
+    stageRaceState.pointsClassification =
+        classification;
+
+    return classification;
+}
+
+
+// ============================================
+// KOM CLASSIFICATION
+// ============================================
+
+function getStageKomPoints(rider, stage) {
+    if (!rider || !stage) {
+        return 0;
+    }
+
+    const mountain =
+        getResultStat(
+            rider,
+            "mountain"
+        );
+
+    const mediumMountain =
+        getResultStat(
+            rider,
+            "mediumMountain"
+        );
+
+    const hill =
+        getResultStat(
+            rider,
+            "hill"
+        );
+
+    /*
+        Dette er stadig en foreløbig
+        simulation-model.
+
+        Når vi senere laver de rigtige
+        climb-sektioner, gives KOM-point
+        ud fra hvem der faktisk vinder
+        hver climb.
+    */
+
+    const climbCount =
+        Array.isArray(stage.climbs)
+            ? stage.climbs.length
+            : 0;
+
+    if (climbCount === 0) {
+        return 0;
+    }
+
+    return Math.round(
+        mountain * 0.50 +
+        mediumMountain * 0.30 +
+        hill * 0.20
+    );
+}
+
+
+function updateKomClassification() {
+    const totals = {};
+
+    stageRaceState.completedStages.forEach(
+        stage => {
+            const riders =
+                getResultsWorldRiders();
+
+            riders.forEach(rider => {
+                const points =
+                    getStageKomPoints(
+                        rider,
+                        stage
+                    );
+
+                if (!totals[rider.id]) {
+                    totals[rider.id] = {
+                        riderId: rider.id,
+                        riderName: rider.name,
+                        teamId: rider.teamId || null,
+                        teamName:
+                            rider.teamName || null,
+                        points: 0
+                    };
+                }
+
+                totals[rider.id].points += points;
+            });
+        }
+    );
+
+    const classification =
+        Object.values(totals)
+            .sort((a, b) =>
+                b.points - a.points
+            )
+            .map((rider, index) => ({
+                ...rider,
+                position: index + 1
+            }));
+
+    stageRaceState.komClassification =
+        classification;
+
+    return classification;
+}
+
+
+// ============================================
+// YOUTH CLASSIFICATION
+// ============================================
+
+function updateYouthClassification() {
+    const gc =
+        stageRaceState.generalClassification;
+
+    const classification =
+        gc
+            .filter(entry => {
+                const rider =
+                    getResultsWorldRiders()
+                        .find(
+                            candidate =>
+                                candidate.id ===
+                                entry.riderId
+                        );
+
+                return (
+                    getRiderAgeForResults(
+                        rider
+                    ) <= 25
+                );
+            })
+            .map((entry, index) => ({
+                ...entry,
+                position: index + 1
+            }));
+
+    stageRaceState.youthClassification =
+        classification;
+
+    return classification;
+}
+
+
+// ============================================
+// ALL CLASSIFICATIONS
+// ============================================
+
+function updateStageRaceClassifications(race) {
+    updateGeneralClassification();
+
+    updatePointsClassification(
+        race
+    );
+
+    updateKomClassification();
+
+    updateYouthClassification();
+
+    return {
+        gc:
+            stageRaceState.generalClassification,
+
+        points:
+            stageRaceState.pointsClassification,
+
+        kom:
+            stageRaceState.komClassification,
+
+        youth:
+            stageRaceState.youthClassification
+    };
+}
+
+
+// ============================================
+// JERSEYS
+// ============================================
+
+function getClassificationLeader(
+    classification
+) {
+    if (
+        !Array.isArray(classification) ||
+        classification.length === 0
+    ) {
+        return null;
+    }
+
+    return classification[0];
+}
+
+
+function updateStageRaceJerseys() {
+    const gcLeader =
+        getClassificationLeader(
+            stageRaceState.generalClassification
+        );
+
+    const pointsLeader =
+        getClassificationLeader(
+            stageRaceState.pointsClassification
+        );
+
+    const komLeader =
+        getClassificationLeader(
+            stageRaceState.komClassification
+        );
+
+    const youthLeader =
+        getClassificationLeader(
+            stageRaceState.youthClassification
+        );
+
+    stageRaceState.jerseys = {
+        gc: gcLeader
+            ? {
+                riderId: gcLeader.riderId,
+                riderName: gcLeader.riderName,
+                teamName: gcLeader.teamName
+            }
+            : null,
+
+        points: pointsLeader
+            ? {
+                riderId: pointsLeader.riderId,
+                riderName: pointsLeader.riderName,
+                teamName: pointsLeader.teamName
+            }
+            : null,
+
+        kom: komLeader
+            ? {
+                riderId: komLeader.riderId,
+                riderName: komLeader.riderName,
+                teamName: komLeader.teamName
+            }
+            : null,
+
+        youth: youthLeader
+            ? {
+                riderId: youthLeader.riderId,
+                riderName: youthLeader.riderName,
+                teamName: youthLeader.teamName
+            }
+            : null
+    };
+
+    return stageRaceState.jerseys;
+}
+
+
+// ============================================
+// PLAYER CLASSIFICATION POSITIONS
+// ============================================
+
+function findClassificationPosition(
+    classification,
+    riderId
+) {
+    if (
+        !Array.isArray(classification) ||
+        !riderId
+    ) {
+        return null;
+    }
+
+    const entry =
+        classification.find(
+            rider =>
+                rider.riderId === riderId
+        );
+
+    return entry?.position || null;
+}
+
+
+function updatePlayerStageRacePositions() {
+    const playerId =
+        game.player?.id;
+
+    if (!playerId) {
+        return;
+    }
+
+    const currentStageResults =
+        stageRaceState.currentStage?.results ||
+        [];
+
+    stageRaceState.player.currentStageResult =
+        currentStageResults.find(
+            result =>
+                result.riderId === playerId
+        ) || null;
+
+    stageRaceState.player.gcPosition =
+        findClassificationPosition(
+            stageRaceState.generalClassification,
+            playerId
+        );
+
+    stageRaceState.player.pointsPosition =
+        findClassificationPosition(
+            stageRaceState.pointsClassification,
+            playerId
+        );
+
+    stageRaceState.player.komPosition =
+        findClassificationPosition(
+            stageRaceState.komClassification,
+            playerId
+        );
+
+    stageRaceState.player.youthPosition =
+        findClassificationPosition(
+            stageRaceState.youthClassification,
+            playerId
+        );
+}
+
+
+// ============================================
+// COMPLETE CURRENT STAGE
+// ============================================
+
+function completeCurrentStage(race) {
+    if (!stageRaceState.active) {
+        return null;
+    }
+
+    const stageData =
+        generateCurrentStageResult(
+            race
+        );
+
+    if (!stageData) {
+        return null;
+    }
+
+    stageRaceState.completedStages.push(
+        stageData
+    );
+
+    updateStageRaceClassifications(
+        race
+    );
+
+    updateStageRaceJerseys();
+
+    updatePlayerStageRacePositions();
+
+    /*
+        Resultatet er nu registreret.
+    */
+
+    return {
+        stage: stageData,
+
+        classifications:
+            updateStageRaceClassifications(
+                race
+            ),
+
+        jerseys:
+            updateStageRaceJerseys(),
+
+        player:
+            stageRaceState.player
+    };
+}
+
+
+// ============================================
+// NEXT STAGE
+// ============================================
+
+function moveToNextStage(race) {
+    if (!stageRaceState.active) {
+        return false;
+    }
+
+    if (isLastStageRaceStage()) {
+        return false;
+    }
+
+    stageRaceState.currentStageNumber += 1;
+
+    stageRaceState.currentStage =
+        getStageRaceStage(
+            race,
+            stageRaceState.currentStageNumber
+        );
+
+    return true;
+}
+
+
+// ============================================
+// STAGE RACE FINISH
+// ============================================
+
+function finishStageRace() {
+    if (!stageRaceState.active) {
+        return false;
+    }
+
+    stageRaceState.active = false;
+
+    stageRaceState.finished = true;
+
+    stageRaceState.finishedAt =
+        new Date().toISOString();
+
+    /*
+        Den endelige GC-leder bliver vinderen.
+    */
+
+    const finalGC =
+        stageRaceState.generalClassification;
+
+    if (finalGC.length > 0) {
+        stageRaceState.jerseys.gc = {
+            riderId:
+                finalGC[0].riderId,
+
+            riderName:
+                finalGC[0].riderName,
+
+            teamName:
+                finalGC[0].teamName
+        };
+    }
+
+    updatePlayerStageRacePositions();
+
+    return true;
+}
+
+
+// ============================================
+// FULL STAGE FLOW
+// ============================================
+
+function runCurrentStageRaceStage(race) {
+    if (!stageRaceState.active) {
+        return {
+            success: false,
+            reason: "stage-race-not-active"
+        };
+    }
+
+    const result =
+        completeCurrentStage(
+            race
+        );
+
+    if (!result) {
+        return {
+            success: false,
+            reason: "stage-result-failed"
+        };
+    }
+
+    const lastStage =
+        isLastStageRaceStage();
+
+    if (lastStage) {
+        finishStageRace();
+
+        return {
+            success: true,
+            finished: true,
+            stage: result.stage,
+            classifications:
+                result.classifications,
+            jerseys: result.jerseys,
+            player: result.player
+        };
+    }
+
+    moveToNextStage(race);
+
+    return {
+        success: true,
+        finished: false,
+
+        completedStage:
+            result.stage,
+
+        nextStage:
+            stageRaceState.currentStage,
+
+        classifications:
+            result.classifications,
+
+        jerseys:
+            result.jerseys,
+
+        player:
+            result.player
+    };
+}
+
+
+// ============================================
+// CURRENT STAGE INFORMATION
+// ============================================
+
+function getCurrentStageRaceInfo() {
+    return {
+        active: stageRaceState.active,
+
+        raceId:
+            stageRaceState.raceId,
+
+        raceName:
+            stageRaceState.raceName,
+
+        currentStage:
+            stageRaceState.currentStageNumber,
+
+        totalStages:
+            stageRaceState.totalStages,
+
+        finishedStages:
+            stageRaceState.completedStages.length,
+
+        isLastStage:
+            isLastStageRaceStage(),
+
+        stage:
+            stageRaceState.currentStage,
+
+        jerseys:
+            stageRaceState.jerseys,
+
+        player:
+            stageRaceState.player
+    };
+}
+
+
+// ============================================
+// CLASSIFICATION LOOKUPS
+// ============================================
+
+function getStageRaceGC() {
+    return [
+        ...stageRaceState.generalClassification
+    ];
+}
+
+
+function getStageRacePoints() {
+    return [
+        ...stageRaceState.pointsClassification
+    ];
+}
+
+
+function getStageRaceKOM() {
+    return [
+        ...stageRaceState.komClassification
+    ];
+}
+
+
+function getStageRaceYouth() {
+    return [
+        ...stageRaceState.youthClassification
+    ];
+}
+
+
+function getStageRaceJerseys() {
+    return {
+        ...stageRaceState.jerseys
+    };
+}
+
+
+// ============================================
+// PLAYER SUMMARY
+// ============================================
+
+function getPlayerStageRaceSummary() {
+    return {
+        currentStage:
+            stageRaceState.currentStageNumber,
+
+        totalStages:
+            stageRaceState.totalStages,
+
+        stageResult:
+            stageRaceState.player.currentStageResult,
+
+        gcPosition:
+            stageRaceState.player.gcPosition,
+
+        pointsPosition:
+            stageRaceState.player.pointsPosition,
+
+        komPosition:
+            stageRaceState.player.komPosition,
+
+        youthPosition:
+            stageRaceState.player.youthPosition
+    };
+}
+
+
+// ============================================
+// STAGE RACE SUMMARY
+// ============================================
+
+function getStageRaceSummary() {
+    return {
+        active:
+            stageRaceState.active,
+
+        finished:
+            stageRaceState.finished,
+
+        raceId:
+            stageRaceState.raceId,
+
+        raceName:
+            stageRaceState.raceName,
+
+        currentStage:
+            stageRaceState.currentStageNumber,
+
+        totalStages:
+            stageRaceState.totalStages,
+
+        completedStages:
+            stageRaceState.completedStages.length,
+
+        jerseys:
+            getStageRaceJerseys(),
+
+        classifications: {
+            gc:
+                getStageRaceGC(),
+
+            points:
+                getStageRacePoints(),
+
+            kom:
+                getStageRaceKOM(),
+
+            youth:
+                getStageRaceYouth()
+        },
+
+        player:
+            getPlayerStageRaceSummary()
+    };
+}
+
+
+// ============================================
+// DEBUG HELPERS
+// ============================================
+
+function debugStartStageRace(race) {
+    const started =
+        startStageRace(race);
+
+    console.log(
+        "Stage race started:",
+        started
+    );
+
+    console.log(
+        "Stage race state:",
+        getStageRaceSummary()
+    );
+
+    return getStageRaceSummary();
+}
+
+
+function debugRunStage(race) {
+    const result =
+        runCurrentStageRaceStage(
+            race
+        );
+
+    console.log(
+        "Stage result:",
+        result
+    );
+
+    return result;
+}
+
+
+function debugStageRaceSummary() {
+    const summary =
+        getStageRaceSummary();
+
+    console.log(
+        "Stage race summary:",
+        summary
+    );
+
+    return summary;
+}
