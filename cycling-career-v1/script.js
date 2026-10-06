@@ -12194,3 +12194,2880 @@ function resetRaceActionSystem() {
 console.log(
     "Race Actions & Player Decisions system loaded."
 );
+// ============================================
+// CYCLING CAREER
+// script.js — Del 19
+// Race Decision Resolution Engine
+// ============================================
+
+const raceResolutionState = {
+    lastResolution: null,
+    history: [],
+    resolutionCount: 0
+};
+
+
+// ============================================
+// 1. RESULT TYPES
+// ============================================
+
+const raceResolutionResults = {
+    excellent: {
+        id: "excellent",
+        label: "Excellent",
+        strength: 1.0
+    },
+
+    success: {
+        id: "success",
+        label: "Success",
+        strength: 0.75
+    },
+
+    partial: {
+        id: "partial",
+        label: "Partial",
+        strength: 0.5
+    },
+
+    failure: {
+        id: "failure",
+        label: "Failure",
+        strength: 0.25
+    },
+
+    poor: {
+        id: "poor",
+        label: "Poor",
+        strength: 0
+    }
+};
+
+
+// ============================================
+// 2. RESOLUTION CONTEXT
+// ============================================
+
+function getRaceResolutionContext() {
+    const player = game.player;
+    const race = game.currentRace;
+    const situation = getCurrentRaceSituation();
+    const group = getPlayerRaceGroup();
+
+    if (!player) {
+        return null;
+    }
+
+    return {
+        player,
+        race,
+        situation,
+        group,
+
+        energy: getCurrentEnergy(),
+        fatigue: getCurrentFatigue(),
+        form: getCurrentForm(),
+
+        position: getPlayerRacePosition(),
+        currentKm: getCurrentRaceKm(),
+        raceProgress: getRaceProgress(),
+
+        weather: race?.weather || null,
+        terrain: race?.terrain || null,
+
+        phase: raceSimulationState.phase
+    };
+}
+
+
+// ============================================
+// 3. STAT HELPERS
+// ============================================
+
+function getPlayerStatValue(statId) {
+    if (!game.player || !game.player.stats) {
+        return 50;
+    }
+
+    const value = game.player.stats[statId];
+
+    if (typeof value === "number") {
+        return value;
+    }
+
+    return 50;
+}
+
+
+function getPlayerAverageStats(statIds) {
+    if (!statIds || statIds.length === 0) {
+        return 50;
+    }
+
+    const values = statIds.map(statId => getPlayerStatValue(statId));
+
+    return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
+
+// ============================================
+// 4. ACTION REQUIREMENTS
+// ============================================
+
+const raceActionRequirements = {
+
+    holdPosition: [
+        "positioning",
+        "raceIQ"
+    ],
+
+    moveForward: [
+        "positioning",
+        "technique"
+    ],
+
+    followWheel: [
+        "positioning",
+        "raceIQ"
+    ],
+
+    pull: [
+        "endurance",
+        "teamwork"
+    ],
+
+    saveEnergy: [
+        "raceIQ",
+        "endurance"
+    ],
+
+    waitForTeam: [
+        "teamwork",
+        "raceIQ"
+    ],
+
+    followAttack: [
+        "raceIQ",
+        "acceleration",
+        "endurance"
+    ],
+
+    closeGap: [
+        "endurance",
+        "acceleration",
+        "raceIQ"
+    ],
+
+    letGo: [
+        "raceIQ",
+        "endurance"
+    ],
+
+    counterAttack: [
+        "acceleration",
+        "endurance",
+        "raceIQ"
+    ],
+
+    waitForCaptain: [
+        "teamwork",
+        "raceIQ"
+    ],
+
+    tryJoinBreakaway: [
+        "endurance",
+        "acceleration",
+        "raceIQ"
+    ],
+
+    attackAlone: [
+        "acceleration",
+        "endurance",
+        "raceIQ"
+    ],
+
+    waitForMoment: [
+        "raceIQ",
+        "mentality"
+    ],
+
+    stayInPeloton: [
+        "positioning",
+        "raceIQ"
+    ],
+
+    tempo: [
+        "endurance",
+        "mountain",
+        "raceIQ"
+    ],
+
+    followClimb: [
+        "mountain",
+        "endurance",
+        "raceIQ"
+    ],
+
+    attackClimb: [
+        "mountain",
+        "acceleration",
+        "endurance"
+    ],
+
+    saveOnClimb: [
+        "mountain",
+        "raceIQ",
+        "endurance"
+    ],
+
+    prepareSprint: [
+        "positioning",
+        "sprint",
+        "raceIQ"
+    ],
+
+    sprint: [
+        "sprint",
+        "acceleration",
+        "positioning"
+    ],
+
+    attackFinale: [
+        "acceleration",
+        "endurance",
+        "raceIQ"
+    ],
+
+    helpCaptain: [
+        "teamwork",
+        "endurance",
+        "raceIQ"
+    ]
+};
+
+
+function getActionRequirements(actionId) {
+    return raceActionRequirements[actionId] || [
+        "raceIQ",
+        "mentality"
+    ];
+}
+
+
+// ============================================
+// 5. CONTEXT MODIFIERS
+// ============================================
+
+function getEnergyModifier(energy) {
+    if (energy >= 80) return 1.08;
+    if (energy >= 65) return 1.03;
+    if (energy >= 50) return 1.0;
+    if (energy >= 35) return 0.94;
+    if (energy >= 20) return 0.86;
+
+    return 0.75;
+}
+
+
+function getFatigueModifier(fatigue) {
+    if (fatigue <= 20) return 1.05;
+    if (fatigue <= 40) return 1.0;
+    if (fatigue <= 60) return 0.94;
+    if (fatigue <= 75) return 0.86;
+    if (fatigue <= 90) return 0.75;
+
+    return 0.62;
+}
+
+
+function getFormModifier(form) {
+    if (form >= 90) return 1.08;
+    if (form >= 80) return 1.04;
+    if (form >= 70) return 1.0;
+    if (form >= 60) return 0.95;
+    if (form >= 50) return 0.89;
+
+    return 0.82;
+}
+
+
+function getPhaseModifier(phase) {
+    switch (phase) {
+        case "earlyRace":
+            return 0.98;
+
+        case "midRace":
+            return 1.0;
+
+        case "finale":
+            return 1.05;
+
+        case "finish":
+            return 1.08;
+
+        default:
+            return 1.0;
+    }
+}
+
+
+// ============================================
+// 6. TERRAIN / WEATHER EFFECTS
+// ============================================
+
+function getTerrainActionModifier(actionId, terrain) {
+    if (!terrain) {
+        return 1.0;
+    }
+
+    const terrainId = terrain.id || terrain;
+
+    if (
+        terrainId === "mountain" &&
+        [
+            "followClimb",
+            "attackClimb",
+            "tempo",
+            "saveOnClimb"
+        ].includes(actionId)
+    ) {
+        return 1.08;
+    }
+
+    if (
+        terrainId === "cobbles" &&
+        [
+            "moveForward",
+            "followWheel",
+            "holdPosition"
+        ].includes(actionId)
+    ) {
+        return 1.05;
+    }
+
+    if (
+        terrainId === "flat" &&
+        [
+            "prepareSprint",
+            "sprint",
+            "followWheel"
+        ].includes(actionId)
+    ) {
+        return 1.04;
+    }
+
+    return 1.0;
+}
+
+
+function getWeatherActionModifier(actionId, weather) {
+    if (!weather) {
+        return 1.0;
+    }
+
+    const weatherId = weather.type || weather.id || weather;
+
+    if (
+        weatherId === "strongWind" &&
+        [
+            "moveForward",
+            "followWheel",
+            "pull",
+            "closeGap"
+        ].includes(actionId)
+    ) {
+        return 1.05;
+    }
+
+    if (
+        weatherId === "rain" &&
+        [
+            "followWheel",
+            "moveForward"
+        ].includes(actionId)
+    ) {
+        return 0.96;
+    }
+
+    return 1.0;
+}
+
+
+// ============================================
+// 7. SITUATION MODIFIER
+// ============================================
+
+function getSituationActionModifier(actionId, situation) {
+    if (!situation) {
+        return 1.0;
+    }
+
+    const type = situation.type;
+
+    if (
+        type === "attack" &&
+        [
+            "followAttack",
+            "closeGap",
+            "counterAttack"
+        ].includes(actionId)
+    ) {
+        return 1.08;
+    }
+
+    if (
+        type === "breakawayAttempt" &&
+        [
+            "tryJoinBreakaway",
+            "followAttack",
+            "stayInPeloton"
+        ].includes(actionId)
+    ) {
+        return 1.05;
+    }
+
+    if (
+        type === "climb" &&
+        [
+            "followClimb",
+            "attackClimb",
+            "tempo",
+            "saveOnClimb"
+        ].includes(actionId)
+    ) {
+        return 1.08;
+    }
+
+    if (
+        type === "finale" &&
+        [
+            "prepareSprint",
+            "sprint",
+            "attackFinale"
+        ].includes(actionId)
+    ) {
+        return 1.08;
+    }
+
+    return 1.0;
+}
+
+
+// ============================================
+// 8. GROUP CONTEXT
+// ============================================
+
+function getGroupModifier(actionId, group) {
+    if (!group) {
+        return 1.0;
+    }
+
+    const groupType = group.type;
+
+    if (
+        groupType === "peloton" &&
+        [
+            "saveEnergy",
+            "followWheel",
+            "holdPosition"
+        ].includes(actionId)
+    ) {
+        return 1.06;
+    }
+
+    if (
+        groupType === "breakaway" &&
+        [
+            "pull",
+            "saveEnergy",
+            "attackAlone"
+        ].includes(actionId)
+    ) {
+        return 1.04;
+    }
+
+    if (
+        groupType === "chase" &&
+        [
+            "closeGap",
+            "pull",
+            "followWheel"
+        ].includes(actionId)
+    ) {
+        return 1.05;
+    }
+
+    return 1.0;
+}
+
+
+// ============================================
+// 9. BASE DECISION SCORE
+// ============================================
+
+function calculateRaceDecisionScore(actionId, context) {
+    const requirements = getActionRequirements(actionId);
+
+    const statScore = getPlayerAverageStats(requirements);
+
+    const energyModifier = getEnergyModifier(context.energy);
+    const fatigueModifier = getFatigueModifier(context.fatigue);
+    const formModifier = getFormModifier(context.form);
+    const phaseModifier = getPhaseModifier(context.phase);
+
+    const terrainModifier = getTerrainActionModifier(
+        actionId,
+        context.terrain
+    );
+
+    const weatherModifier = getWeatherActionModifier(
+        actionId,
+        context.weather
+    );
+
+    const situationModifier = getSituationActionModifier(
+        actionId,
+        context.situation
+    );
+
+    const groupModifier = getGroupModifier(
+        actionId,
+        context.group
+    );
+
+    let score = statScore;
+
+    score *= energyModifier;
+    score *= fatigueModifier;
+    score *= formModifier;
+    score *= phaseModifier;
+    score *= terrainModifier;
+    score *= weatherModifier;
+    score *= situationModifier;
+    score *= groupModifier;
+
+    return Math.max(0, Math.min(100, score));
+}
+
+
+// ============================================
+// 10. UNCERTAINTY
+// ============================================
+
+function getDecisionUncertainty(context) {
+    const raceIQ = getPlayerStatValue("raceIQ");
+    const mentality = getPlayerStatValue("mentality");
+
+    const awareness = (raceIQ + mentality) / 2;
+
+    let uncertainty = 14;
+
+    if (awareness >= 80) {
+        uncertainty = 7;
+    } else if (awareness >= 65) {
+        uncertainty = 10;
+    } else if (awareness < 45) {
+        uncertainty = 19;
+    }
+
+    if (context.fatigue >= 75) {
+        uncertainty += 4;
+    }
+
+    if (context.phase === "finale") {
+        uncertainty += 3;
+    }
+
+    return uncertainty;
+}
+
+
+function applyDecisionUncertainty(score, context) {
+    const uncertainty = getDecisionUncertainty(context);
+
+    const randomFactor =
+        (Math.random() * uncertainty * 2) - uncertainty;
+
+    return Math.max(
+        0,
+        Math.min(100, score + randomFactor)
+    );
+}
+
+
+// ============================================
+// 11. RESULT CLASSIFICATION
+// ============================================
+
+function classifyRaceDecision(score) {
+    if (score >= 88) {
+        return raceResolutionResults.excellent;
+    }
+
+    if (score >= 70) {
+        return raceResolutionResults.success;
+    }
+
+    if (score >= 52) {
+        return raceResolutionResults.partial;
+    }
+
+    if (score >= 32) {
+        return raceResolutionResults.failure;
+    }
+
+    return raceResolutionResults.poor;
+}
+
+
+// ============================================
+// 12. POSITION OUTCOME
+// ============================================
+
+function calculatePositionChange(actionId, result, context) {
+    let change = 0;
+
+    switch (actionId) {
+        case "moveForward":
+            change = 2;
+
+            if (result.id === "excellent") {
+                change = 7;
+            } else if (result.id === "success") {
+                change = 5;
+            } else if (result.id === "partial") {
+                change = 2;
+            } else {
+                change = 0;
+            }
+            break;
+
+        case "followWheel":
+            change = result.id === "poor" ? -2 : 1;
+            break;
+
+        case "holdPosition":
+            change = result.id === "poor" ? -3 : 0;
+            break;
+
+        case "closeGap":
+            if (result.id === "excellent") change = 8;
+            else if (result.id === "success") change = 5;
+            else if (result.id === "partial") change = 2;
+            else change = -2;
+            break;
+
+        case "attackFinale":
+        case "attackClimb":
+        case "counterAttack":
+            if (result.id === "excellent") change = 10;
+            else if (result.id === "success") change = 6;
+            else if (result.id === "partial") change = 2;
+            else change = -4;
+            break;
+
+        case "sprint":
+            if (result.id === "excellent") change = 12;
+            else if (result.id === "success") change = 8;
+            else if (result.id === "partial") change = 3;
+            else change = -5;
+            break;
+
+        case "saveEnergy":
+        case "saveOnClimb":
+            if (result.id === "excellent") change = -1;
+            else if (result.id === "success") change = -1;
+            else if (result.id === "partial") change = -2;
+            else change = -4;
+            break;
+
+        default:
+            if (result.id === "excellent") {
+                change = 4;
+            } else if (result.id === "success") {
+                change = 2;
+            } else if (result.id === "poor") {
+                change = -3;
+            }
+            break;
+    }
+
+    return change;
+}
+
+
+function applyRacePositionChange(change) {
+    const currentPosition = getPlayerRacePosition();
+
+    const newPosition = Math.max(
+        1,
+        currentPosition - change
+    );
+
+    raceSimulationState.playerPosition = newPosition;
+
+    return newPosition;
+}
+
+
+// ============================================
+// 13. GROUP OUTCOME
+// ============================================
+
+function determineGroupOutcome(actionId, result, context) {
+    if (!context.group) {
+        return {
+            type: "unchanged",
+            groupId: null
+        };
+    }
+
+    const currentGroup = context.group;
+
+    if (
+        actionId === "tryJoinBreakaway" &&
+        result.id !== "poor"
+    ) {
+        const breakaway = raceSimulationState.groups.find(
+            group => group.type === "breakaway"
+        );
+
+        if (breakaway) {
+            return {
+                type: result.id === "excellent"
+                    ? "joinedBreakaway"
+                    : "attemptedBreakaway",
+                groupId: breakaway.id
+            };
+        }
+    }
+
+    if (
+        actionId === "stayInPeloton" ||
+        actionId === "saveEnergy"
+    ) {
+        return {
+            type: "stay",
+            groupId: currentGroup.id
+        };
+    }
+
+    if (
+        actionId === "closeGap" &&
+        result.id === "excellent"
+    ) {
+        return {
+            type: "gapClosed",
+            groupId: currentGroup.id
+        };
+    }
+
+    return {
+        type: "unchanged",
+        groupId: currentGroup.id
+    };
+}
+
+
+// ============================================
+// 14. ENERGY / FATIGUE EFFECT
+// ============================================
+
+function getResolutionPhysicalEffect(actionId, result) {
+    const effects = {
+        excellent: {
+            energy: -2,
+            fatigue: 2
+        },
+
+        success: {
+            energy: -4,
+            fatigue: 4
+        },
+
+        partial: {
+            energy: -5,
+            fatigue: 5
+        },
+
+        failure: {
+            energy: -7,
+            fatigue: 7
+        },
+
+        poor: {
+            energy: -9,
+            fatigue: 9
+        }
+    };
+
+    const base = effects[result.id] || effects.partial;
+
+    const actionMultipliers = {
+        saveEnergy: 0.35,
+        saveOnClimb: 0.45,
+        holdPosition: 0.55,
+        followWheel: 0.65,
+        waitForTeam: 0.5,
+        letGo: 0.4,
+        waitForCaptain: 0.45,
+        pull: 1.25,
+        closeGap: 1.3,
+        counterAttack: 1.4,
+        attackAlone: 1.5,
+        attackClimb: 1.45,
+        sprint: 1.2,
+        attackFinale: 1.4
+    };
+
+    const multiplier =
+        actionMultipliers[actionId] || 1.0;
+
+    return {
+        energy: Math.round(base.energy * multiplier),
+        fatigue: Math.round(base.fatigue * multiplier)
+    };
+}
+
+
+function applyResolutionPhysicalEffect(effect) {
+    if (effect.energy < 0) {
+        consumeEnergy(Math.abs(effect.energy));
+    } else if (effect.energy > 0) {
+        addEnergy(effect.energy);
+    }
+
+    if (effect.fatigue > 0) {
+        addFatigue(effect.fatigue);
+    } else if (effect.fatigue < 0) {
+        reduceFatigue(Math.abs(effect.fatigue));
+    }
+}
+
+
+// ============================================
+// 15. SPECIAL OUTCOMES
+// ============================================
+
+function determineSpecialOutcome(actionId, result, context) {
+    const outcome = {
+        attack: false,
+        breakaway: false,
+        sprintPrepared: false,
+        captainSupported: false
+    };
+
+    if (
+        [
+            "attackFinale",
+            "attackClimb",
+            "counterAttack",
+            "attackAlone"
+        ].includes(actionId) &&
+        result.id !== "poor"
+    ) {
+        outcome.attack = true;
+    }
+
+    if (
+        actionId === "tryJoinBreakaway" &&
+        ["excellent", "success"].includes(result.id)
+    ) {
+        outcome.breakaway = true;
+    }
+
+    if (
+        actionId === "prepareSprint" &&
+        result.id !== "poor"
+    ) {
+        outcome.sprintPrepared = true;
+    }
+
+    if (
+        actionId === "helpCaptain" &&
+        result.id !== "poor"
+    ) {
+        outcome.captainSupported = true;
+    }
+
+    return outcome;
+}
+
+
+// ============================================
+// 16. MAIN RESOLUTION FUNCTION
+// ============================================
+
+function resolveRaceDecision(actionId) {
+    if (!raceSimulationState.active) {
+        console.warn("Cannot resolve race decision: race is not active.");
+        return null;
+    }
+
+    const context = getRaceResolutionContext();
+
+    if (!context) {
+        console.warn("Cannot resolve race decision: missing player.");
+        return null;
+    }
+
+    const baseScore = calculateRaceDecisionScore(
+        actionId,
+        context
+    );
+
+    const finalScore = applyDecisionUncertainty(
+        baseScore,
+        context
+    );
+
+    const result = classifyRaceDecision(finalScore);
+
+    const positionChange = calculatePositionChange(
+        actionId,
+        result,
+        context
+    );
+
+    const newPosition = applyRacePositionChange(
+        positionChange
+    );
+
+    const groupOutcome = determineGroupOutcome(
+        actionId,
+        result,
+        context
+    );
+
+    const physicalEffect = getResolutionPhysicalEffect(
+        actionId,
+        result
+    );
+
+    applyResolutionPhysicalEffect(
+        physicalEffect
+    );
+
+    const specialOutcome = determineSpecialOutcome(
+        actionId,
+        result,
+        context
+    );
+
+    const resolution = {
+        id: `resolution-${Date.now()}-${raceResolutionState.resolutionCount + 1}`,
+
+        actionId,
+
+        result: result.id,
+        resultLabel: result.label,
+
+        score: Math.round(finalScore),
+
+        previousPosition: context.position,
+        positionChange,
+        newPosition,
+
+        groupOutcome,
+
+        physicalEffect,
+
+        specialOutcome,
+
+        situation: context.situation
+            ? context.situation.type
+            : null,
+
+        phase: context.phase,
+
+        km: context.currentKm,
+
+        timestamp: Date.now()
+    };
+
+    raceResolutionState.lastResolution = resolution;
+    raceResolutionState.history.push(resolution);
+    raceResolutionState.resolutionCount++;
+
+    return resolution;
+}
+
+
+// ============================================
+// 17. HUMAN-READABLE OUTCOME
+// ============================================
+
+function getRaceDecisionOutcomeText(resolution) {
+    if (!resolution) {
+        return "No decision was resolved.";
+    }
+
+    switch (resolution.result) {
+        case "excellent":
+            return "The decision worked extremely well.";
+
+        case "success":
+            return "The decision worked well.";
+
+        case "partial":
+            return "The decision had mixed results.";
+
+        case "failure":
+            return "The decision did not work as planned.";
+
+        case "poor":
+            return "The decision went badly.";
+
+        default:
+            return "The situation developed unpredictably.";
+    }
+}
+
+
+// ============================================
+// 18. LAST RESOLUTION / HISTORY
+// ============================================
+
+function getLastRaceResolution() {
+    return raceResolutionState.lastResolution;
+}
+
+
+function getRaceResolutionHistory() {
+    return [...raceResolutionState.history];
+}
+
+
+function clearRaceResolutionHistory() {
+    raceResolutionState.history = [];
+    raceResolutionState.lastResolution = null;
+    raceResolutionState.resolutionCount = 0;
+}
+
+
+// ============================================
+// 19. RESOLUTION SUMMARY
+// ============================================
+
+function getRaceResolutionSummary() {
+    const last = getLastRaceResolution();
+
+    return {
+        totalDecisions: raceResolutionState.resolutionCount,
+
+        lastResult: last
+            ? last.resultLabel
+            : null,
+
+        lastAction: last
+            ? last.actionId
+            : null,
+
+        lastPosition: last
+            ? last.newPosition
+            : getPlayerRacePosition(),
+
+        lastGroupOutcome: last
+            ? last.groupOutcome.type
+            : null,
+
+        lastPhysicalEffect: last
+            ? last.physicalEffect
+            : null
+    };
+}
+
+
+// ============================================
+// 20. RESET
+// ============================================
+
+function resetRaceResolutionState() {
+    raceResolutionState.lastResolution = null;
+    raceResolutionState.history = [];
+    raceResolutionState.resolutionCount = 0;
+}
+// ============================================
+// CYCLING CAREER
+// script.js — Del 20
+// Rivaler & Race World Simulation
+// ============================================
+
+const raceWorldState = {
+    riders: [],
+    activeRiders: [],
+    events: [],
+    simulationStep: 0
+};
+
+
+// ============================================
+// 1. RACE RIDER ROLES
+// ============================================
+
+const raceRiderRoles = {
+    captain: {
+        id: "captain",
+        label: "Captain",
+        priority: 1
+    },
+
+    leader: {
+        id: "leader",
+        label: "Leader",
+        priority: 2
+    },
+
+    climber: {
+        id: "climber",
+        label: "Climber",
+        priority: 3
+    },
+
+    sprinter: {
+        id: "sprinter",
+        label: "Sprinter",
+        priority: 3
+    },
+
+    classics: {
+        id: "classics",
+        label: "Classics Rider",
+        priority: 3
+    },
+
+    domestique: {
+        id: "domestique",
+        label: "Domestique",
+        priority: 5
+    },
+
+    breakaway: {
+        id: "breakaway",
+        label: "Breakaway Rider",
+        priority: 4
+    },
+
+    helper: {
+        id: "helper",
+        label: "Helper",
+        priority: 5
+    }
+};
+
+
+// ============================================
+// 2. RACE RIDER CREATION
+// ============================================
+
+function createRaceWorldRider(data = {}) {
+    const rider = {
+        id: data.id || `race-rider-${Date.now()}-${Math.random()}`,
+
+        name: data.name || "Unknown Rider",
+        team: data.team || null,
+        nationality: data.nationality || null,
+
+        role: data.role || "helper",
+
+        position: data.position || 100,
+        groupId: data.groupId || null,
+
+        energy: typeof data.energy === "number"
+            ? data.energy
+            : 100,
+
+        fatigue: typeof data.fatigue === "number"
+            ? data.fatigue
+            : 0,
+
+        form: typeof data.form === "number"
+            ? data.form
+            : 75,
+
+        stats: data.stats || {},
+
+        raceGoal: data.raceGoal || "team",
+
+        status: "active",
+
+        attacking: false,
+        chasing: false,
+        protectingCaptain: false,
+        sprinting: false,
+
+        lastAction: null,
+        lastActionKm: null
+    };
+
+    return rider;
+}
+
+
+// ============================================
+// 3. ADD / REMOVE RIDERS
+// ============================================
+
+function addRaceWorldRider(rider) {
+    if (!rider || !rider.id) {
+        return null;
+    }
+
+    const existing = raceWorldState.riders.find(
+        existingRider => existingRider.id === rider.id
+    );
+
+    if (existing) {
+        return existing;
+    }
+
+    raceWorldState.riders.push(rider);
+
+    return rider;
+}
+
+
+function removeRaceWorldRider(riderId) {
+    raceWorldState.riders =
+        raceWorldState.riders.filter(
+            rider => rider.id !== riderId
+        );
+
+    raceWorldState.activeRiders =
+        raceWorldState.activeRiders.filter(
+            rider => rider.id !== riderId
+        );
+}
+
+
+function getRaceWorldRider(riderId) {
+    return raceWorldState.riders.find(
+        rider => rider.id === riderId
+    ) || null;
+}
+
+
+function getActiveRaceWorldRiders() {
+    return raceWorldState.riders.filter(
+        rider => rider.status === "active"
+    );
+}
+
+
+// ============================================
+// 4. RIDER STAT HELPERS
+// ============================================
+
+function getRaceWorldRiderStat(rider, statId) {
+    if (!rider || !rider.stats) {
+        return 50;
+    }
+
+    const value = rider.stats[statId];
+
+    return typeof value === "number"
+        ? value
+        : 50;
+}
+
+
+function getRaceWorldAverageStat(rider, statIds) {
+    if (!statIds || statIds.length === 0) {
+        return 50;
+    }
+
+    const values = statIds.map(
+        statId => getRaceWorldRiderStat(rider, statId)
+    );
+
+    return values.reduce(
+        (sum, value) => sum + value,
+        0
+    ) / values.length;
+}
+
+
+// ============================================
+// 5. ROLE → RACE PRIORITY
+// ============================================
+
+function getRaceRolePriority(rider) {
+    const role = raceRiderRoles[rider?.role];
+
+    return role
+        ? role.priority
+        : 5;
+}
+
+
+function getRaceRoleDefinition(roleId) {
+    return raceRiderRoles[roleId] || null;
+}
+
+
+// ============================================
+// 6. RIDER GOAL
+// ============================================
+
+const raceWorldGoals = {
+    gc: {
+        id: "gc",
+        label: "GC",
+        stats: [
+            "endurance",
+            "mountain",
+            "raceIQ"
+        ]
+    },
+
+    stage: {
+        id: "stage",
+        label: "Stage",
+        stats: [
+            "endurance",
+            "acceleration",
+            "raceIQ"
+        ]
+    },
+
+    sprint: {
+        id: "sprint",
+        label: "Sprint",
+        stats: [
+            "sprint",
+            "acceleration",
+            "positioning"
+        ]
+    },
+
+    breakaway: {
+        id: "breakaway",
+        label: "Breakaway",
+        stats: [
+            "endurance",
+            "acceleration",
+            "raceIQ"
+        ]
+    },
+
+    classics: {
+        id: "classics",
+        label: "Classics",
+        stats: [
+            "hill",
+            "cobblestones",
+            "positioning"
+        ]
+    },
+
+    team: {
+        id: "team",
+        label: "Team",
+        stats: [
+            "teamwork",
+            "endurance",
+            "raceIQ"
+        ]
+    }
+};
+
+
+function getRaceWorldGoal(goalId) {
+    return raceWorldGoals[goalId]
+        || raceWorldGoals.team;
+}
+
+
+// ============================================
+// 7. GOAL COMPATIBILITY
+// ============================================
+
+function calculateRiderGoalStrength(rider) {
+    const goal = getRaceWorldGoal(
+        rider.raceGoal
+    );
+
+    return getRaceWorldAverageStat(
+        rider,
+        goal.stats
+    );
+}
+
+
+// ============================================
+// 8. RIDER RACE STRENGTH
+// ============================================
+
+function calculateRaceWorldRiderStrength(
+    rider,
+    context = {}
+) {
+    if (!rider) {
+        return 0;
+    }
+
+    let strength = calculateRiderGoalStrength(
+        rider
+    );
+
+    const energyModifier =
+        Math.max(0.55, rider.energy / 100);
+
+    const fatigueModifier =
+        Math.max(0.60, 1 - (rider.fatigue / 250));
+
+    const formModifier =
+        Math.max(0.70, rider.form / 100);
+
+    strength *= energyModifier;
+    strength *= fatigueModifier;
+    strength *= formModifier;
+
+    return Math.max(
+        0,
+        Math.min(100, strength)
+    );
+}
+
+
+// ============================================
+// 9. RIDER ACTION TYPES
+// ============================================
+
+const raceWorldActions = {
+    maintain: {
+        id: "maintain",
+        label: "Maintain"
+    },
+
+    moveForward: {
+        id: "moveForward",
+        label: "Move Forward"
+    },
+
+    follow: {
+        id: "follow",
+        label: "Follow"
+    },
+
+    pull: {
+        id: "pull",
+        label: "Pull"
+    },
+
+    attack: {
+        id: "attack",
+        label: "Attack"
+    },
+
+    chase: {
+        id: "chase",
+        label: "Chase"
+    },
+
+    protect: {
+        id: "protect",
+        label: "Protect Captain"
+    },
+
+    saveEnergy: {
+        id: "saveEnergy",
+        label: "Save Energy"
+    },
+
+    prepareSprint: {
+        id: "prepareSprint",
+        label: "Prepare Sprint"
+    }
+};
+
+
+// ============================================
+// 10. ACTION SELECTION
+// ============================================
+
+function chooseRaceWorldAction(
+    rider,
+    context = {}
+) {
+    if (!rider || rider.status !== "active") {
+        return "maintain";
+    }
+
+    const goal = rider.raceGoal;
+    const phase = context.phase;
+    const situation = context.situation;
+
+    // Very tired riders naturally protect energy.
+    if (rider.energy <= 20 || rider.fatigue >= 85) {
+        return "saveEnergy";
+    }
+
+    // Sprinters protect energy before the finale.
+    if (
+        rider.role === "sprinter" &&
+        phase !== "finale" &&
+        phase !== "finish"
+    ) {
+        return "saveEnergy";
+    }
+
+    // Breakaway riders look for opportunities.
+    if (
+        rider.role === "breakaway" &&
+        situation === "breakawayAttempt"
+    ) {
+        return "attack";
+    }
+
+    // GC leaders normally follow rather than waste energy.
+    if (
+        (goal === "gc" || rider.role === "captain") &&
+        situation === "attack"
+    ) {
+        return "follow";
+    }
+
+    // A classics rider becomes more aggressive
+    // on hills and difficult terrain.
+    if (
+        rider.role === "classics" &&
+        (
+            context.terrain === "hills" ||
+            context.terrain === "cobbles"
+        )
+    ) {
+        return "attack";
+    }
+
+    // Sprinters prepare for the finale.
+    if (
+        rider.role === "sprinter" &&
+        phase === "finale"
+    ) {
+        return "prepareSprint";
+    }
+
+    // Domestiques primarily work for the team.
+    if (
+        rider.role === "domestique" &&
+        context.captainNearby
+    ) {
+        return "protect";
+    }
+
+    // Chasing an active attack.
+    if (
+        situation === "attack" &&
+        rider.role !== "domestique"
+    ) {
+        return "chase";
+    }
+
+    return "maintain";
+}
+
+
+// ============================================
+// 11. ACTION ENERGY COST
+// ============================================
+
+function getRaceWorldActionCost(actionId) {
+    const costs = {
+        maintain: 1,
+        moveForward: 3,
+        follow: 3,
+        pull: 5,
+        attack: 10,
+        chase: 8,
+        protect: 4,
+        saveEnergy: -2,
+        prepareSprint: 1
+    };
+
+    return costs[actionId] ?? 1;
+}
+
+
+// ============================================
+// 12. APPLY WORLD RIDER ACTION
+// ============================================
+
+function applyRaceWorldAction(
+    rider,
+    actionId,
+    context = {}
+) {
+    if (!rider) {
+        return null;
+    }
+
+    const cost = getRaceWorldActionCost(
+        actionId
+    );
+
+    if (cost < 0) {
+        rider.energy = Math.min(
+            100,
+            rider.energy + Math.abs(cost)
+        );
+    } else {
+        rider.energy = Math.max(
+            0,
+            rider.energy - cost
+        );
+    }
+
+    if (cost >= 5) {
+        rider.fatigue = Math.min(
+            100,
+            rider.fatigue + Math.round(cost * 0.65)
+        );
+    }
+
+    rider.lastAction = actionId;
+    rider.lastActionKm =
+        context.currentKm ?? null;
+
+    rider.attacking =
+        actionId === "attack";
+
+    rider.chasing =
+        actionId === "chase";
+
+    rider.protectingCaptain =
+        actionId === "protect";
+
+    rider.sprinting =
+        actionId === "prepareSprint";
+
+    return rider;
+}
+
+
+// ============================================
+// 13. TEAM RELATIONSHIP
+// ============================================
+
+function areRaceWorldTeammates(
+    riderA,
+    riderB
+) {
+    if (!riderA || !riderB) {
+        return false;
+    }
+
+    return (
+        riderA.team &&
+        riderB.team &&
+        riderA.team === riderB.team
+    );
+}
+
+
+// ============================================
+// 14. CAPTAIN SEARCH
+// ============================================
+
+function findTeamCaptain(
+    rider,
+    riders = raceWorldState.riders
+) {
+    if (!rider || !rider.team) {
+        return null;
+    }
+
+    return riders.find(
+        other =>
+            other.team === rider.team &&
+            (
+                other.role === "captain" ||
+                other.role === "leader"
+            ) &&
+            other.status === "active"
+    ) || null;
+}
+
+
+// ============================================
+// 15. NEARBY TEAMMATES
+// ============================================
+
+function getNearbyTeammates(
+    rider,
+    riders = raceWorldState.riders,
+    maxPositionDifference = 10
+) {
+    if (!rider) {
+        return [];
+    }
+
+    return riders.filter(other => {
+        if (other.id === rider.id) {
+            return false;
+        }
+
+        if (!areRaceWorldTeammates(rider, other)) {
+            return false;
+        }
+
+        if (other.status !== "active") {
+            return false;
+        }
+
+        return Math.abs(
+            other.position - rider.position
+        ) <= maxPositionDifference;
+    });
+}
+
+
+// ============================================
+// 16. RACE WORLD EVENT
+// ============================================
+
+function createRaceWorldEvent(
+    type,
+    data = {}
+) {
+    return {
+        id: `world-event-${Date.now()}-${raceWorldState.events.length + 1}`,
+
+        type,
+
+        riderId: data.riderId || null,
+
+        action: data.action || null,
+
+        description:
+            data.description || "",
+
+        km: data.km ?? getCurrentRaceKm(),
+
+        timestamp: Date.now()
+    };
+}
+
+
+function addRaceWorldEvent(event) {
+    if (!event) {
+        return null;
+    }
+
+    raceWorldState.events.push(event);
+
+    return event;
+}
+
+
+// ============================================
+// 17. SIMULATE ONE RIDER
+// ============================================
+
+function simulateRaceWorldRider(
+    rider,
+    context = {}
+) {
+    if (!rider || rider.status !== "active") {
+        return null;
+    }
+
+    const captain = findTeamCaptain(
+        rider
+    );
+
+    const nearbyTeammates =
+        getNearbyTeammates(rider);
+
+    const riderContext = {
+        ...context,
+
+        captainNearby: Boolean(
+            captain &&
+            Math.abs(
+                captain.position -
+                rider.position
+            ) <= 10
+        ),
+
+        nearbyTeammates
+    };
+
+    const action = chooseRaceWorldAction(
+        rider,
+        riderContext
+    );
+
+    applyRaceWorldAction(
+        rider,
+        action,
+        riderContext
+    );
+
+    return {
+        riderId: rider.id,
+        action,
+        position: rider.position,
+        energy: rider.energy,
+        fatigue: rider.fatigue
+    };
+}
+
+
+// ============================================
+// 18. SIMULATE WORLD STEP
+// ============================================
+
+function simulateRaceWorldStep(
+    context = {}
+) {
+    const riders =
+        getActiveRaceWorldRiders();
+
+    const results = [];
+
+    raceWorldState.simulationStep++;
+
+    riders.forEach(rider => {
+        const result =
+            simulateRaceWorldRider(
+                rider,
+                context
+            );
+
+        if (result) {
+            results.push(result);
+        }
+    });
+
+    return results;
+}
+
+
+// ============================================
+// 19. WORLD RIDER SORTING
+// ============================================
+
+function sortRaceWorldRidersByPosition() {
+    raceWorldState.riders.sort(
+        (a, b) => a.position - b.position
+    );
+
+    return raceWorldState.riders;
+}
+
+
+// ============================================
+// 20. INITIALIZE RACE WORLD
+// ============================================
+
+function initializeRaceWorld(
+    riders = []
+) {
+    raceWorldState.riders = [];
+    raceWorldState.activeRiders = [];
+    raceWorldState.events = [];
+    raceWorldState.simulationStep = 0;
+
+    riders.forEach(riderData => {
+        const rider =
+            riderData.id
+                ? createRaceWorldRider(riderData)
+                : createRaceWorldRider({
+                    ...riderData
+                });
+
+        addRaceWorldRider(rider);
+    });
+
+    raceWorldState.activeRiders =
+        getActiveRaceWorldRiders();
+
+    sortRaceWorldRidersByPosition();
+
+    return raceWorldState;
+}
+
+
+// ============================================
+// 21. WORLD STATE
+// ============================================
+
+function getRaceWorldState() {
+    return {
+        riders: [...raceWorldState.riders],
+
+        activeRiders: [
+            ...getActiveRaceWorldRiders()
+        ],
+
+        events: [
+            ...raceWorldState.events
+        ],
+
+        simulationStep:
+            raceWorldState.simulationStep
+    };
+}
+
+
+// ============================================
+// 22. RESET
+// ============================================
+
+function resetRaceWorldState() {
+    raceWorldState.riders = [];
+    raceWorldState.activeRiders = [];
+    raceWorldState.events = [];
+    raceWorldState.simulationStep = 0;
+}
+// ============================================
+// CYCLING CAREER
+// script.js — Del 21
+// Race Interaction Engine
+// ============================================
+
+const raceInteractionState = {
+    activeInteractions: [],
+    attacks: [],
+    breakaways: [],
+    chases: [],
+    groupChanges: [],
+    lastInteraction: null
+};
+
+
+// ============================================
+// 1. INTERACTION TYPES
+// ============================================
+
+const raceInteractionTypes = {
+    attack: "attack",
+    follow: "follow",
+    chase: "chase",
+    breakaway: "breakaway",
+    counterAttack: "counterAttack",
+    groupSplit: "groupSplit",
+    groupMerge: "groupMerge",
+    captainSupport: "captainSupport",
+    mechanical: "mechanical"
+};
+
+
+// ============================================
+// 2. CREATE INTERACTION
+// ============================================
+
+function createRaceInteraction(
+    type,
+    data = {}
+) {
+    return {
+        id: `interaction-${Date.now()}-${Math.random()}`,
+
+        type,
+
+        riderId: data.riderId || null,
+        targetRiderId: data.targetRiderId || null,
+
+        groupId: data.groupId || null,
+        targetGroupId: data.targetGroupId || null,
+
+        strength: data.strength ?? 0,
+
+        successful:
+            data.successful ?? false,
+
+        description:
+            data.description || "",
+
+        km:
+            data.km ?? getCurrentRaceKm(),
+
+        timestamp: Date.now()
+    };
+}
+
+
+function addRaceInteraction(interaction) {
+    if (!interaction) {
+        return null;
+    }
+
+    raceInteractionState.activeInteractions.push(
+        interaction
+    );
+
+    raceInteractionState.lastInteraction =
+        interaction;
+
+    return interaction;
+}
+
+
+// ============================================
+// 3. FIND RACE WORLD RIVALS
+// ============================================
+
+function getRaceWorldRivals() {
+    if (!game.player) {
+        return [];
+    }
+
+    return getActiveRaceWorldRiders().filter(
+        rider =>
+            rider.id !== game.player.id
+    );
+}
+
+
+// ============================================
+// 4. RIDER STRENGTH FOR SITUATION
+// ============================================
+
+function calculateInteractionStrength(
+    rider,
+    action,
+    context = {}
+) {
+    if (!rider) {
+        return 0;
+    }
+
+    let stats = [];
+
+    switch (action) {
+        case "attack":
+            stats = [
+                "acceleration",
+                "endurance",
+                "raceIQ"
+            ];
+            break;
+
+        case "follow":
+            stats = [
+                "raceIQ",
+                "positioning",
+                "endurance"
+            ];
+            break;
+
+        case "chase":
+            stats = [
+                "endurance",
+                "acceleration",
+                "raceIQ"
+            ];
+            break;
+
+        case "sprint":
+            stats = [
+                "sprint",
+                "acceleration",
+                "positioning"
+            ];
+            break;
+
+        default:
+            stats = [
+                "endurance",
+                "raceIQ"
+            ];
+    }
+
+    let strength =
+        getRaceWorldAverageStat(
+            rider,
+            stats
+        );
+
+    const energyModifier =
+        Math.max(
+            0.5,
+            rider.energy / 100
+        );
+
+    const fatigueModifier =
+        Math.max(
+            0.55,
+            1 - rider.fatigue / 220
+        );
+
+    const formModifier =
+        Math.max(
+            0.7,
+            rider.form / 100
+        );
+
+    strength *= energyModifier;
+    strength *= fatigueModifier;
+    strength *= formModifier;
+
+    return Math.max(
+        0,
+        Math.min(100, strength)
+    );
+}
+
+
+// ============================================
+// 5. SHOULD RIVAL ATTACK?
+// ============================================
+
+function shouldRiderAttack(
+    rider,
+    context = {}
+) {
+    if (!rider || rider.status !== "active") {
+        return false;
+    }
+
+    if (
+        rider.energy < 35 ||
+        rider.fatigue > 70
+    ) {
+        return false;
+    }
+
+    const phase = context.phase;
+    const terrain = context.terrain;
+
+    if (
+        rider.role === "breakaway" &&
+        context.situation === "breakawayAttempt"
+    ) {
+        return true;
+    }
+
+    if (
+        rider.role === "classics" &&
+        (
+            terrain === "hills" ||
+            terrain === "cobbles"
+        )
+    ) {
+        return Math.random() < 0.35;
+    }
+
+    if (
+        rider.role === "climber" &&
+        terrain === "mountain"
+    ) {
+        return Math.random() < 0.4;
+    }
+
+    if (
+        phase === "finale" &&
+        rider.role === "leader"
+    ) {
+        return Math.random() < 0.25;
+    }
+
+    return Math.random() < 0.08;
+}
+
+
+// ============================================
+// 6. CREATE RIVAL ATTACK
+// ============================================
+
+function createRivalAttack(
+    rider,
+    context = {}
+) {
+    if (!shouldRiderAttack(rider, context)) {
+        return null;
+    }
+
+    const strength =
+        calculateInteractionStrength(
+            rider,
+            "attack",
+            context
+        );
+
+    const interaction =
+        createRaceInteraction(
+            raceInteractionTypes.attack,
+            {
+                riderId: rider.id,
+                strength,
+                description:
+                    `${rider.name} attacks the group.`
+            }
+        );
+
+    addRaceInteraction(interaction);
+
+    rider.attacking = true;
+
+    addRaceWorldEvent(
+        createRaceWorldEvent(
+            "attack",
+            {
+                riderId: rider.id,
+                action: "attack",
+                description:
+                    `${rider.name} attacks.`,
+                km: context.currentKm
+            }
+        )
+    );
+
+    return interaction;
+}
+
+
+// ============================================
+// 7. CHOOSE RIDERS TO FOLLOW
+// ============================================
+
+function getRidersLikelyToFollow(
+    attacker,
+    riders,
+    context = {}
+) {
+    if (!attacker) {
+        return [];
+    }
+
+    return riders.filter(rider => {
+        if (!rider || rider.id === attacker.id) {
+            return false;
+        }
+
+        if (rider.status !== "active") {
+            return false;
+        }
+
+        if (rider.energy < 20) {
+            return false;
+        }
+
+        const strength =
+            calculateInteractionStrength(
+                rider,
+                "follow",
+                context
+            );
+
+        const raceIQ =
+            getRaceWorldRiderStat(
+                rider,
+                "raceIQ"
+            );
+
+        const threshold =
+            48 +
+            (raceIQ - 50) * 0.25;
+
+        return strength >= threshold;
+    });
+}
+
+
+// ============================================
+// 8. RESOLVE ATTACK
+// ============================================
+
+function resolveRivalAttack(
+    interaction,
+    context = {}
+) {
+    if (!interaction) {
+        return null;
+    }
+
+    const attacker =
+        getRaceWorldRider(
+            interaction.riderId
+        );
+
+    if (!attacker) {
+        return null;
+    }
+
+    const rivals =
+        getRaceWorldRivals();
+
+    const followers =
+        getRidersLikelyToFollow(
+            attacker,
+            rivals,
+            context
+        );
+
+    const attackerStrength =
+        interaction.strength;
+
+    const followStrength =
+        followers.length > 0
+            ? followers.reduce(
+                (sum, rider) =>
+                    sum +
+                    calculateInteractionStrength(
+                        rider,
+                        "follow",
+                        context
+                    ),
+                0
+            ) / followers.length
+            : 0;
+
+    let successful =
+        attackerStrength >
+        followStrength;
+
+    if (followers.length === 0) {
+        successful = true;
+    }
+
+    interaction.successful =
+        successful;
+
+    if (successful) {
+        createBreakawayFromAttack(
+            attacker,
+            followers,
+            context
+        );
+    } else {
+        attacker.attacking = false;
+    }
+
+    return {
+        attacker,
+        followers,
+        successful
+    };
+}
+
+
+// ============================================
+// 9. CREATE BREAKAWAY
+// ============================================
+
+function createBreakawayFromAttack(
+    attacker,
+    followers = [],
+    context = {}
+) {
+    const riders = [
+        attacker,
+        ...followers
+    ];
+
+    const groupId =
+        `breakaway-${Date.now()}`;
+
+    const group =
+        createRaceGroup({
+            id: groupId,
+            type: "breakaway",
+            riders: riders.map(
+                rider => rider.id
+            ),
+            position:
+                Math.min(
+                    ...riders.map(
+                        rider => rider.position
+                    )
+                ),
+            gapToPeloton: 0
+        });
+
+    addRaceGroup(group);
+
+    riders.forEach(rider => {
+        moveRaceWorldRiderToGroup(
+            rider,
+            groupId
+        );
+
+        rider.attacking = false;
+        rider.chasing = false;
+    });
+
+    raceInteractionState.breakaways.push({
+        groupId,
+        riders: riders.map(
+            rider => rider.id
+        ),
+        km: context.currentKm
+    });
+
+    const interaction =
+        createRaceInteraction(
+            raceInteractionTypes.breakaway,
+            {
+                groupId,
+                successful: true,
+                strength:
+                    calculateGroupStrength(riders),
+                description:
+                    "A breakaway has formed."
+            }
+        );
+
+    addRaceInteraction(interaction);
+
+    return group;
+}
+
+
+// ============================================
+// 10. GROUP STRENGTH
+// ============================================
+
+function calculateGroupStrength(
+    riders = []
+) {
+    if (!riders.length) {
+        return 0;
+    }
+
+    const strengths =
+        riders.map(
+            rider =>
+                calculateRaceWorldRiderStrength(
+                    rider
+                )
+        );
+
+    return strengths.reduce(
+        (sum, strength) =>
+            sum + strength,
+        0
+    ) / strengths.length;
+}
+
+
+// ============================================
+// 11. MOVE WORLD RIDER TO GROUP
+// ============================================
+
+function moveRaceWorldRiderToGroup(
+    rider,
+    groupId
+) {
+    if (!rider) {
+        return false;
+    }
+
+    const oldGroup =
+        rider.groupId;
+
+    if (oldGroup) {
+        removeRiderFromRaceGroup(
+            oldGroup,
+            rider.id
+        );
+    }
+
+    addRiderToRaceGroup(
+        groupId,
+        rider.id
+    );
+
+    rider.groupId = groupId;
+
+    return true;
+}
+
+
+// ============================================
+// 12. FIND PLAYER'S GROUP
+// ============================================
+
+function getPlayerWorldGroup() {
+    if (!game.player) {
+        return null;
+    }
+
+    const worldRider =
+        getRaceWorldRider(
+            game.player.id
+        );
+
+    if (!worldRider) {
+        return null;
+    }
+
+    return getRaceGroup(
+        worldRider.groupId
+    );
+}
+
+
+// ============================================
+// 13. PLAYER IMPACT FROM ATTACK
+// ============================================
+
+function resolvePlayerAgainstAttack(
+    attacker,
+    context = {}
+) {
+    if (!game.player || !attacker) {
+        return null;
+    }
+
+    const player =
+        getRaceWorldRider(
+            game.player.id
+        );
+
+    if (!player) {
+        return null;
+    }
+
+    const playerStrength =
+        calculateInteractionStrength(
+            player,
+            "follow",
+            context
+        );
+
+    const attackerStrength =
+        calculateInteractionStrength(
+            attacker,
+            "attack",
+            context
+        );
+
+    if (
+        playerStrength >=
+        attackerStrength
+    ) {
+        return {
+            result: "follow",
+            gapCreated: false
+        };
+    }
+
+    if (
+        playerStrength >=
+        attackerStrength - 10
+    ) {
+        return {
+            result: "under_pressure",
+            gapCreated: false
+        };
+    }
+
+    return {
+        result: "dropped",
+        gapCreated: true
+    };
+}
+
+
+// ============================================
+// 14. CHASE GROUP
+// ============================================
+
+function createChaseGroup(
+    riders = [],
+    targetGroupId = null,
+    context = {}
+) {
+    if (!riders.length) {
+        return null;
+    }
+
+    const groupId =
+        `chase-${Date.now()}`;
+
+    const group =
+        createRaceGroup({
+            id: groupId,
+            type: "chase",
+            riders: riders.map(
+                rider => rider.id
+            ),
+            position:
+                Math.min(
+                    ...riders.map(
+                        rider => rider.position
+                    )
+                ),
+            gapToPeloton: 0
+        });
+
+    addRaceGroup(group);
+
+    riders.forEach(rider => {
+        moveRaceWorldRiderToGroup(
+            rider,
+            groupId
+        );
+
+        rider.chasing = true;
+    });
+
+    raceInteractionState.chases.push({
+        groupId,
+        targetGroupId,
+        riders: riders.map(
+            rider => rider.id
+        ),
+        km: context.currentKm
+    });
+
+    return group;
+}
+
+
+// ============================================
+// 15. RESOLVE CHASE
+// ============================================
+
+function resolveChaseGroup(
+    chaseGroup,
+    targetGroup,
+    context = {}
+) {
+    if (!chaseGroup || !targetGroup) {
+        return null;
+    }
+
+    const chaseRiders =
+        chaseGroup.riders
+            .map(id =>
+                getRaceWorldRider(id)
+            )
+            .filter(Boolean);
+
+    const targetRiders =
+        targetGroup.riders
+            .map(id =>
+                getRaceWorldRider(id)
+            )
+            .filter(Boolean);
+
+    const chaseStrength =
+        calculateGroupStrength(
+            chaseRiders
+        );
+
+    const targetStrength =
+        calculateGroupStrength(
+            targetRiders
+        );
+
+    if (
+        chaseStrength >=
+        targetStrength
+    ) {
+        raceInteractionState.groupChanges.push({
+            type: "groupMerge",
+            from: chaseGroup.id,
+            to: targetGroup.id,
+            km: context.currentKm
+        });
+
+        chaseRiders.forEach(rider => {
+            moveRaceWorldRiderToGroup(
+                rider,
+                targetGroup.id
+            );
+
+            rider.chasing = false;
+        });
+
+        removeRaceGroup(
+            chaseGroup.id
+        );
+
+        return "merged";
+    }
+
+    return "chasing";
+}
+
+
+// ============================================
+// 16. TEAM SUPPORT
+// ============================================
+
+function resolveTeamSupport(
+    rider,
+    context = {}
+) {
+    if (!rider) {
+        return null;
+    }
+
+    const captain =
+        findTeamCaptain(rider);
+
+    if (!captain) {
+        return null;
+    }
+
+    const teammates =
+        getNearbyTeammates(
+            rider
+        );
+
+    if (!teammates.length) {
+        return null;
+    }
+
+    const helpers =
+        teammates.filter(
+            teammate =>
+                teammate.role === "domestique" ||
+                teammate.role === "helper"
+        );
+
+    if (!helpers.length) {
+        return null;
+    }
+
+    const helper =
+        helpers[0];
+
+    helper.protectingCaptain = true;
+
+    addRaceWorldEvent(
+        createRaceWorldEvent(
+            "captainSupport",
+            {
+                riderId: helper.id,
+                description:
+                    `${helper.name} supports ${captain.name}.`,
+                km: context.currentKm
+            }
+        )
+    );
+
+    return {
+        captain,
+        helper
+    };
+}
+
+
+// ============================================
+// 17. RUN INTERACTIONS
+// ============================================
+
+function simulateRaceInteractions(
+    context = {}
+) {
+    const riders =
+        getActiveRaceWorldRiders();
+
+    const results = [];
+
+    // ----------------------------------------
+    // Step 1: Rival attacks
+    // ----------------------------------------
+
+    riders.forEach(rider => {
+        if (
+            shouldRiderAttack(
+                rider,
+                context
+            )
+        ) {
+            const attack =
+                createRivalAttack(
+                    rider,
+                    context
+                );
+
+            if (attack) {
+                const result =
+                    resolveRivalAttack(
+                        attack,
+                        context
+                    );
+
+                results.push({
+                    type: "attack",
+                    result
+                });
+            }
+        }
+    });
+
+    // ----------------------------------------
+    // Step 2: Team support
+    // ----------------------------------------
+
+    riders.forEach(rider => {
+        if (
+            rider.role === "domestique" ||
+            rider.role === "helper"
+        ) {
+            const support =
+                resolveTeamSupport(
+                    rider,
+                    context
+                );
+
+            if (support) {
+                results.push({
+                    type: "support",
+                    result: support
+                });
+            }
+        }
+    });
+
+    // ----------------------------------------
+    // Step 3: Sort groups
+    // ----------------------------------------
+
+    sortRaceWorldRidersByPosition();
+
+    return results;
+}
+
+
+// ============================================
+// 18. INTERACTION STATE
+// ============================================
+
+function getRaceInteractionState() {
+    return {
+        activeInteractions: [
+            ...raceInteractionState.activeInteractions
+        ],
+
+        attacks: [
+            ...raceInteractionState.attacks
+        ],
+
+        breakaways: [
+            ...raceInteractionState.breakaways
+        ],
+
+        chases: [
+            ...raceInteractionState.chases
+        ],
+
+        groupChanges: [
+            ...raceInteractionState.groupChanges
+        ],
+
+        lastInteraction:
+            raceInteractionState.lastInteraction
+    };
+}
+
+
+// ============================================
+// 19. RESET
+// ============================================
+
+function resetRaceInteractionState() {
+    raceInteractionState.activeInteractions = [];
+    raceInteractionState.attacks = [];
+    raceInteractionState.breakaways = [];
+    raceInteractionState.chases = [];
+    raceInteractionState.groupChanges = [];
+    raceInteractionState.lastInteraction = null;
+}
