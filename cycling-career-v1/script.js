@@ -15071,3 +15071,2516 @@ function resetRaceInteractionState() {
     raceInteractionState.groupChanges = [];
     raceInteractionState.lastInteraction = null;
 }
+// ============================================
+// CYCLING CAREER
+// script.js — Del 22
+// Race Groups & World Synchronization
+// ============================================
+
+
+// ============================================
+// 1. SYNCHRONIZATION STATE
+// ============================================
+
+const raceSyncState = {
+    lastSync: null,
+    syncCount: 0,
+    warnings: []
+};
+
+
+// ============================================
+// 2. GET ALL RACE GROUPS
+// ============================================
+
+function getAllRaceGroups() {
+    if (!raceSimulationState.groups) {
+        return [];
+    }
+
+    return raceSimulationState.groups;
+}
+
+
+function getActiveRaceGroups() {
+    return getAllRaceGroups().filter(
+        group =>
+            group &&
+            group.riders &&
+            group.riders.length > 0
+    );
+}
+
+
+// ============================================
+// 3. FIND GROUP FOR WORLD RIDER
+// ============================================
+
+function findRaceGroupForWorldRider(
+    riderId
+) {
+    if (!riderId) {
+        return null;
+    }
+
+    return getActiveRaceGroups().find(
+        group =>
+            group.riders.includes(riderId)
+    ) || null;
+}
+
+
+// ============================================
+// 4. FIND WORLD RIDER FOR RACE RIDER
+// ============================================
+
+function findWorldRiderForRaceRider(
+    riderId
+) {
+    if (!riderId) {
+        return null;
+    }
+
+    return getRaceWorldRider(riderId);
+}
+
+
+// ============================================
+// 5. ENSURE RIDER GROUP CONSISTENCY
+// ============================================
+
+function synchronizeRiderGroup(
+    rider
+) {
+    if (!rider || !rider.id) {
+        return false;
+    }
+
+    const raceGroup =
+        findRaceGroupForWorldRider(
+            rider.id
+        );
+
+    if (!raceGroup) {
+        rider.groupId = null;
+        return false;
+    }
+
+    rider.groupId = raceGroup.id;
+
+    return true;
+}
+
+
+// ============================================
+// 6. ENSURE GROUP RIDER CONSISTENCY
+// ============================================
+
+function synchronizeGroupRiders(
+    group
+) {
+    if (!group || !group.riders) {
+        return false;
+    }
+
+    const validRiders =
+        group.riders.filter(
+            riderId =>
+                Boolean(
+                    getRaceWorldRider(riderId)
+                )
+        );
+
+    group.riders = validRiders;
+
+    return true;
+}
+
+
+// ============================================
+// 7. REMOVE DUPLICATE GROUP MEMBERSHIPS
+// ============================================
+
+function removeDuplicateGroupMemberships() {
+    const seenRiders = new Set();
+    let duplicatesRemoved = 0;
+
+    getActiveRaceGroups().forEach(group => {
+        group.riders =
+            group.riders.filter(riderId => {
+                if (seenRiders.has(riderId)) {
+                    duplicatesRemoved++;
+
+                    raceSyncState.warnings.push({
+                        type: "duplicateGroupMembership",
+                        riderId,
+                        groupId: group.id
+                    });
+
+                    return false;
+                }
+
+                seenRiders.add(riderId);
+
+                return true;
+            });
+    });
+
+    return duplicatesRemoved;
+}
+
+
+// ============================================
+// 8. SYNCHRONIZE WORLD RIDERS
+// ============================================
+
+function synchronizeWorldRiders() {
+    const riders =
+        getActiveRaceWorldRiders();
+
+    riders.forEach(rider => {
+        synchronizeRiderGroup(rider);
+    });
+
+    return riders.length;
+}
+
+
+// ============================================
+// 9. SYNCHRONIZE GROUPS
+// ============================================
+
+function synchronizeRaceGroups() {
+    const groups =
+        getActiveRaceGroups();
+
+    groups.forEach(group => {
+        synchronizeGroupRiders(group);
+    });
+
+    removeDuplicateGroupMemberships();
+
+    return groups.length;
+}
+
+
+// ============================================
+// 10. SYNCHRONIZE PLAYER
+// ============================================
+
+function synchronizePlayerRaceState() {
+    if (!game.player) {
+        return false;
+    }
+
+    const worldPlayer =
+        getRaceWorldRider(
+            game.player.id
+        );
+
+    if (!worldPlayer) {
+        return false;
+    }
+
+    const playerGroup =
+        findRaceGroupForWorldRider(
+            worldPlayer.id
+        );
+
+    if (playerGroup) {
+        worldPlayer.groupId =
+            playerGroup.id;
+
+        raceSimulationState.playerGroupId =
+            playerGroup.id;
+    } else {
+        worldPlayer.groupId = null;
+
+        raceSimulationState.playerGroupId =
+            null;
+    }
+
+    raceSimulationState.playerPosition =
+        worldPlayer.position;
+
+    return true;
+}
+
+
+// ============================================
+// 11. SYNCHRONIZE POSITION
+// ============================================
+
+function synchronizeRiderPositions() {
+    const groups =
+        getActiveRaceGroups();
+
+    groups.forEach(group => {
+        const riders =
+            group.riders
+                .map(riderId =>
+                    getRaceWorldRider(riderId)
+                )
+                .filter(Boolean);
+
+        if (!riders.length) {
+            return;
+        }
+
+        riders.forEach(rider => {
+            if (
+                typeof rider.position !== "number"
+            ) {
+                rider.position =
+                    group.position || 100;
+            }
+        });
+
+        const averagePosition =
+            riders.reduce(
+                (sum, rider) =>
+                    sum + rider.position,
+                0
+            ) / riders.length;
+
+        group.position =
+            Math.round(averagePosition);
+    });
+}
+
+
+// ============================================
+// 12. SORT RIDERS INSIDE GROUP
+// ============================================
+
+function sortRidersInsideGroups() {
+    getActiveRaceGroups().forEach(group => {
+        group.riders.sort(
+            (a, b) => {
+                const riderA =
+                    getRaceWorldRider(a);
+
+                const riderB =
+                    getRaceWorldRider(b);
+
+                if (!riderA || !riderB) {
+                    return 0;
+                }
+
+                return (
+                    riderA.position -
+                    riderB.position
+                );
+            }
+        );
+    });
+}
+
+
+// ============================================
+// 13. REBUILD GROUP MEMBERSHIP
+// ============================================
+
+function rebuildGroupMembership() {
+    const riders =
+        getActiveRaceWorldRiders();
+
+    const groups =
+        getActiveRaceGroups();
+
+    groups.forEach(group => {
+        group.riders = [];
+    });
+
+    riders.forEach(rider => {
+        if (!rider.groupId) {
+            return;
+        }
+
+        const group =
+            groups.find(
+                existingGroup =>
+                    existingGroup.id ===
+                    rider.groupId
+            );
+
+        if (!group) {
+            raceSyncState.warnings.push({
+                type: "missingGroup",
+                riderId: rider.id,
+                groupId: rider.groupId
+            });
+
+            rider.groupId = null;
+            return;
+        }
+
+        if (!group.riders.includes(rider.id)) {
+            group.riders.push(rider.id);
+        }
+    });
+
+    return groups;
+}
+
+
+// ============================================
+// 14. CLEAN EMPTY GROUPS
+// ============================================
+
+function cleanEmptyRaceGroups() {
+    const groups =
+        getAllRaceGroups();
+
+    const emptyGroups =
+        groups.filter(
+            group =>
+                !group.riders ||
+                group.riders.length === 0
+        );
+
+    emptyGroups.forEach(group => {
+        removeRaceGroup(group.id);
+    });
+
+    return emptyGroups.length;
+}
+
+
+// ============================================
+// 15. CREATE DEFAULT PLAYER GROUP
+// ============================================
+
+function ensurePlayerHasRaceGroup() {
+    if (!game.player) {
+        return null;
+    }
+
+    const player =
+        getRaceWorldRider(
+            game.player.id
+        );
+
+    if (!player) {
+        return null;
+    }
+
+    const existingGroup =
+        findRaceGroupForWorldRider(
+            player.id
+        );
+
+    if (existingGroup) {
+        player.groupId =
+            existingGroup.id;
+
+        return existingGroup;
+    }
+
+    const peloton =
+        getActiveRaceGroups().find(
+            group =>
+                group.type === "peloton"
+        );
+
+    if (!peloton) {
+        return null;
+    }
+
+    addRiderToRaceGroup(
+        peloton.id,
+        player.id
+    );
+
+    player.groupId =
+        peloton.id;
+
+    raceSimulationState.playerGroupId =
+        peloton.id;
+
+    return peloton;
+}
+
+
+// ============================================
+// 16. SYNCHRONIZE PLAYER POSITION
+// ============================================
+
+function synchronizePlayerPosition() {
+    if (!game.player) {
+        return false;
+    }
+
+    const player =
+        getRaceWorldRider(
+            game.player.id
+        );
+
+    if (!player) {
+        return false;
+    }
+
+    raceSimulationState.playerPosition =
+        player.position;
+
+    return true;
+}
+
+
+// ============================================
+// 17. FULL SYNCHRONIZATION
+// ============================================
+
+function synchronizeRaceWorld() {
+    raceSyncState.warnings = [];
+
+    synchronizeRaceGroups();
+
+    rebuildGroupMembership();
+
+    synchronizeWorldRiders();
+
+    ensurePlayerHasRaceGroup();
+
+    synchronizeRiderPositions();
+
+    sortRidersInsideGroups();
+
+    synchronizePlayerRaceState();
+
+    cleanEmptyRaceGroups();
+
+    raceSyncState.syncCount++;
+
+    raceSyncState.lastSync = {
+        timestamp: Date.now(),
+
+        riderCount:
+            getActiveRaceWorldRiders().length,
+
+        groupCount:
+            getActiveRaceGroups().length,
+
+        playerGroupId:
+            raceSimulationState.playerGroupId,
+
+        playerPosition:
+            raceSimulationState.playerPosition,
+
+        warnings:
+            [...raceSyncState.warnings]
+    };
+
+    return raceSyncState.lastSync;
+}
+
+
+// ============================================
+// 18. VERIFY SYNCHRONIZATION
+// ============================================
+
+function verifyRaceWorldSynchronization() {
+    const problems = [];
+
+    const riders =
+        getActiveRaceWorldRiders();
+
+    const groups =
+        getActiveRaceGroups();
+
+    riders.forEach(rider => {
+        const group =
+            findRaceGroupForWorldRider(
+                rider.id
+            );
+
+        if (
+            rider.groupId &&
+            (!group ||
+                group.id !== rider.groupId)
+        ) {
+            problems.push({
+                type: "riderGroupMismatch",
+                riderId: rider.id,
+                riderGroupId: rider.groupId,
+                actualGroupId:
+                    group
+                        ? group.id
+                        : null
+            });
+        }
+    });
+
+    groups.forEach(group => {
+        group.riders.forEach(riderId => {
+            const rider =
+                getRaceWorldRider(riderId);
+
+            if (!rider) {
+                problems.push({
+                    type: "missingWorldRider",
+                    groupId: group.id,
+                    riderId
+                });
+
+                return;
+            }
+
+            if (rider.groupId !== group.id) {
+                problems.push({
+                    type: "groupRiderMismatch",
+                    groupId: group.id,
+                    riderId,
+                    riderGroupId:
+                        rider.groupId
+                });
+            }
+        });
+    });
+
+    return {
+        valid: problems.length === 0,
+        problems
+    };
+}
+
+
+// ============================================
+// 19. GET PLAYER RACE POSITION DATA
+// ============================================
+
+function getSynchronizedPlayerRaceData() {
+    if (!game.player) {
+        return null;
+    }
+
+    const player =
+        getRaceWorldRider(
+            game.player.id
+        );
+
+    if (!player) {
+        return null;
+    }
+
+    const group =
+        findRaceGroupForWorldRider(
+            player.id
+        );
+
+    return {
+        riderId: player.id,
+
+        position:
+            player.position,
+
+        groupId:
+            group
+                ? group.id
+                : null,
+
+        groupType:
+            group
+                ? group.type
+                : null,
+
+        groupSize:
+            group
+                ? group.riders.length
+                : 0,
+
+        energy:
+            player.energy,
+
+        fatigue:
+            player.fatigue,
+
+        form:
+            player.form
+    };
+}
+
+
+// ============================================
+// 20. SYNCHRONIZED GROUP DATA
+// ============================================
+
+function getSynchronizedRaceGroups() {
+    return getActiveRaceGroups().map(
+        group => ({
+            id: group.id,
+
+            type: group.type,
+
+            position:
+                group.position,
+
+            riderCount:
+                group.riders.length,
+
+            riders:
+                group.riders
+                    .map(riderId =>
+                        getRaceWorldRider(
+                            riderId
+                        )
+                    )
+                    .filter(Boolean)
+                    .map(rider => ({
+                        id: rider.id,
+                        name: rider.name,
+                        team: rider.team,
+                        position:
+                            rider.position,
+                        energy:
+                            rider.energy,
+                        fatigue:
+                            rider.fatigue
+                    }))
+        })
+    );
+}
+
+
+// ============================================
+// 21. SYNCHRONIZATION SUMMARY
+// ============================================
+
+function getRaceSynchronizationSummary() {
+    const verification =
+        verifyRaceWorldSynchronization();
+
+    return {
+        syncCount:
+            raceSyncState.syncCount,
+
+        riderCount:
+            getActiveRaceWorldRiders().length,
+
+        groupCount:
+            getActiveRaceGroups().length,
+
+        player:
+            getSynchronizedPlayerRaceData(),
+
+        valid:
+            verification.valid,
+
+        problems:
+            verification.problems,
+
+        warnings:
+            [...raceSyncState.warnings]
+    };
+}
+
+
+// ============================================
+// 22. RESET
+// ============================================
+
+function resetRaceSyncState() {
+    raceSyncState.lastSync = null;
+    raceSyncState.syncCount = 0;
+    raceSyncState.warnings = [];
+}
+// ============================================
+// CYCLING CAREER
+// script.js — Del 23
+// Race Progression Engine
+// ============================================
+
+
+// ============================================
+// 1. PROGRESSION STATE
+// ============================================
+
+const raceProgressionState = {
+    lastStep: null,
+    stepHistory: [],
+    totalSteps: 0,
+    distanceTravelled: 0,
+    nextDecisionKm: null
+};
+
+
+// ============================================
+// 2. PROGRESSION SETTINGS
+// ============================================
+
+const raceProgressionSettings = {
+    earlyRaceStep: 15,
+    midRaceStep: 10,
+    finaleStep: 3,
+
+    minimumStep: 1,
+    maximumStep: 20
+};
+
+
+// ============================================
+// 3. GET CURRENT PHASE
+// ============================================
+
+function getRaceProgressionPhase() {
+    return raceSimulationState.phase;
+}
+
+
+// ============================================
+// 4. GET PROGRESSION DISTANCE
+// ============================================
+
+function getRaceProgressionStepDistance() {
+    const phase =
+        getRaceProgressionPhase();
+
+    switch (phase) {
+        case "earlyRace":
+            return raceProgressionSettings.earlyRaceStep;
+
+        case "midRace":
+            return raceProgressionSettings.midRaceStep;
+
+        case "finale":
+            return raceProgressionSettings.finaleStep;
+
+        case "finish":
+            return 1;
+
+        default:
+            return raceProgressionSettings.earlyRaceStep;
+    }
+}
+
+
+// ============================================
+// 5. CLAMP STEP
+// ============================================
+
+function clampRaceProgressionStep(
+    distance
+) {
+    return Math.max(
+        raceProgressionSettings.minimumStep,
+        Math.min(
+            raceProgressionSettings.maximumStep,
+            distance
+        )
+    );
+}
+
+
+// ============================================
+// 6. FIND NEXT IMPORTANT POINT
+// ============================================
+
+function getNextRaceImportantPoint(
+    currentKm,
+    race
+) {
+    if (!race) {
+        return null;
+    }
+
+    const points = [];
+
+    // ----------------------------------------
+    // Climbs
+    // ----------------------------------------
+
+    if (Array.isArray(race.climbs)) {
+        race.climbs.forEach(climb => {
+            if (
+                typeof climb.startKm === "number" &&
+                climb.startKm > currentKm
+            ) {
+                points.push({
+                    type: "climb",
+                    km: climb.startKm,
+                    object: climb
+                });
+            }
+        });
+    }
+
+    // ----------------------------------------
+    // Race features
+    // ----------------------------------------
+
+    if (
+        Array.isArray(race.features)
+    ) {
+        race.features.forEach(feature => {
+            if (
+                feature &&
+                typeof feature.km === "number" &&
+                feature.km > currentKm
+            ) {
+                points.push({
+                    type: "feature",
+                    km: feature.km,
+                    object: feature
+                });
+            }
+        });
+    }
+
+    // ----------------------------------------
+    // Finish
+    // ----------------------------------------
+
+    if (
+        typeof race.distance === "number" &&
+        race.distance > currentKm
+    ) {
+        points.push({
+            type: "finish",
+            km: race.distance,
+            object: null
+        });
+    }
+
+    if (!points.length) {
+        return null;
+    }
+
+    points.sort(
+        (a, b) => a.km - b.km
+    );
+
+    return points[0];
+}
+
+
+// ============================================
+// 7. CALCULATE NEXT STEP
+// ============================================
+
+function calculateNextRaceProgressionStep() {
+    const race =
+        game.currentRace;
+
+    if (!race) {
+        return 0;
+    }
+
+    const currentKm =
+        getCurrentRaceKm();
+
+    const baseStep =
+        getRaceProgressionStepDistance();
+
+    const nextPoint =
+        getNextRaceImportantPoint(
+            currentKm,
+            race
+        );
+
+    if (!nextPoint) {
+        return clampRaceProgressionStep(
+            baseStep
+        );
+    }
+
+    const distanceToPoint =
+        nextPoint.km - currentKm;
+
+    if (
+        distanceToPoint <=
+        baseStep
+    ) {
+        return Math.max(
+            1,
+            distanceToPoint
+        );
+    }
+
+    return clampRaceProgressionStep(
+        baseStep
+    );
+}
+
+
+// ============================================
+// 8. UPDATE RACE PHASE
+// ============================================
+
+function updateRaceProgressionPhase() {
+    const race =
+        game.currentRace;
+
+    if (!race) {
+        return raceSimulationState.phase;
+    }
+
+    const phase =
+        getRacePhaseFromProgress(
+            raceSimulationState.currentKm,
+            raceSimulationState.totalKm
+        );
+
+    raceSimulationState.phase =
+        phase;
+
+    return phase;
+}
+
+
+// ============================================
+// 9. ADVANCE RACE DISTANCE
+// ============================================
+
+function advanceRaceProgressionDistance(
+    distance
+) {
+    if (!raceSimulationState.active) {
+        return false;
+    }
+
+    const remaining =
+        getRemainingRaceDistance();
+
+    const actualDistance =
+        Math.min(
+            distance,
+            remaining
+        );
+
+    raceSimulationState.currentKm +=
+        actualDistance;
+
+    raceProgressionState.distanceTravelled +=
+        actualDistance;
+
+    updateRaceProgressionPhase();
+
+    return actualDistance;
+}
+
+
+// ============================================
+// 10. SIMULATE RIDER MOVEMENT
+// ============================================
+
+function simulateRaceWorldMovement(
+    context = {}
+) {
+    const riders =
+        getActiveRaceWorldRiders();
+
+    riders.forEach(rider => {
+        if (
+            rider.status !== "active"
+        ) {
+            return;
+        }
+
+        const action =
+            rider.lastAction;
+
+        let movement = 0;
+
+        switch (action) {
+            case "moveForward":
+                movement = 2;
+                break;
+
+            case "follow":
+                movement = 1;
+                break;
+
+            case "pull":
+                movement = 1;
+                break;
+
+            case "attack":
+                movement = 4;
+                break;
+
+            case "chase":
+                movement = 3;
+                break;
+
+            case "protect":
+                movement = 0;
+                break;
+
+            case "saveEnergy":
+                movement = -1;
+                break;
+
+            case "prepareSprint":
+                movement = 0;
+                break;
+
+            default:
+                movement = 0;
+        }
+
+        rider.position =
+            Math.max(
+                1,
+                rider.position - movement
+            );
+    });
+
+    sortRaceWorldRidersByPosition();
+}
+
+
+// ============================================
+// 11. SIMULATE NATURAL PELOTON MOVEMENT
+// ============================================
+
+function simulateNaturalRaceMovement(
+    context = {}
+) {
+    const riders =
+        getActiveRaceWorldRiders();
+
+    riders.forEach(rider => {
+        if (
+            rider.lastAction === "attack" ||
+            rider.lastAction === "chase"
+        ) {
+            return;
+        }
+
+        const variation =
+            Math.random();
+
+        if (variation < 0.45) {
+            rider.position += 1;
+        } else if (variation > 0.9) {
+            rider.position -= 1;
+        }
+
+        rider.position =
+            Math.max(
+                1,
+                rider.position
+            );
+    });
+}
+
+
+// ============================================
+// 12. SIMULATE WORLD STEP
+// ============================================
+
+function simulateRaceProgressionWorldStep() {
+    const context = {
+        phase:
+            raceSimulationState.phase,
+
+        situation:
+            raceSimulationState.currentSituation
+                ? raceSimulationState.currentSituation.type
+                : "normal",
+
+        terrain:
+            game.currentRace?.terrain || null,
+
+        currentKm:
+            raceSimulationState.currentKm
+    };
+
+    // Other riders make decisions.
+    simulateRaceWorldStep(
+        context
+    );
+
+    // Their decisions influence positions.
+    simulateRaceWorldMovement(
+        context
+    );
+
+    // Small natural movement keeps the
+    // peloton from looking completely static.
+    simulateNaturalRaceMovement(
+        context
+    );
+
+    // Resolve interactions created
+    // by those decisions.
+    simulateRaceInteractions(
+        context
+    );
+
+    // Keep the two systems synchronized.
+    synchronizeRaceWorld();
+
+    return context;
+}
+
+
+// ============================================
+// 13. DETECT NATURAL SITUATIONS
+// ============================================
+
+function detectNaturalRaceSituation() {
+    const groups =
+        getActiveRaceGroups();
+
+    const breakaway =
+        groups.find(
+            group =>
+                group.type === "breakaway"
+        );
+
+    const chase =
+        groups.find(
+            group =>
+                group.type === "chase"
+        );
+
+    if (
+        breakaway &&
+        breakaway.riders.length >= 2
+    ) {
+        return createRaceSituation(
+            "breakawayFormed",
+            {
+                description:
+                    "A breakaway is established."
+            }
+        );
+    }
+
+    if (
+        chase &&
+        chase.riders.length >= 2
+    ) {
+        return createRaceSituation(
+            "attack",
+            {
+                description:
+                    "A chase is developing behind the leaders."
+            }
+        );
+    }
+
+    return null;
+}
+
+
+// ============================================
+// 14. CREATE PROGRESSION RECORD
+// ============================================
+
+function createRaceProgressionRecord(
+    data = {}
+) {
+    return {
+        step:
+            raceProgressionState.totalSteps + 1,
+
+        fromKm:
+            data.fromKm ?? getCurrentRaceKm(),
+
+        toKm:
+            data.toKm ?? getCurrentRaceKm(),
+
+        distance:
+            data.distance ?? 0,
+
+        phase:
+            data.phase ??
+            raceSimulationState.phase,
+
+        situation:
+            data.situation || null,
+
+        importantPoint:
+            data.importantPoint || null,
+
+        timestamp: Date.now()
+    };
+}
+
+
+// ============================================
+// 15. MAIN PROGRESSION STEP
+// ============================================
+
+function advanceRaceProgression() {
+    if (!raceSimulationState.active) {
+        return null;
+    }
+
+    if (
+        raceSimulationState.phase ===
+        "completed"
+    ) {
+        return null;
+    }
+
+    const fromKm =
+        getCurrentRaceKm();
+
+    const nextStep =
+        calculateNextRaceProgressionStep();
+
+    if (nextStep <= 0) {
+        return null;
+    }
+
+    const importantPoint =
+        getNextRaceImportantPoint(
+            fromKm,
+            game.currentRace
+        );
+
+    // Move race forward.
+    const travelled =
+        advanceRaceProgressionDistance(
+            nextStep
+        );
+
+    // Let the world act during this section.
+    const worldContext =
+        simulateRaceProgressionWorldStep();
+
+    // Detect what happened naturally.
+    const naturalSituation =
+        detectNaturalRaceSituation();
+
+    if (naturalSituation) {
+        setCurrentRaceSituation(
+            naturalSituation
+        );
+    }
+
+    // Keep everything synchronized.
+    synchronizeRaceWorld();
+
+    const record =
+        createRaceProgressionRecord({
+            fromKm,
+
+            toKm:
+                getCurrentRaceKm(),
+
+            distance:
+                travelled,
+
+            phase:
+                raceSimulationState.phase,
+
+            situation:
+                naturalSituation
+                    ? naturalSituation.type
+                    : null,
+
+            importantPoint:
+                importantPoint
+                    ? importantPoint.type
+                    : null
+        });
+
+    raceProgressionState.totalSteps++;
+
+    raceProgressionState.lastStep =
+        record;
+
+    raceProgressionState.stepHistory.push(
+        record
+    );
+
+    return {
+        record,
+
+        worldContext,
+
+        importantPoint,
+
+        situation:
+            naturalSituation,
+
+        groups:
+            getSynchronizedRaceGroups()
+    };
+}
+
+
+// ============================================
+// 16. ADVANCE UNTIL IMPORTANT EVENT
+// ============================================
+
+function advanceRaceToImportantMoment(
+    maxSteps = 10
+) {
+    const results = [];
+
+    for (
+        let i = 0;
+        i < maxSteps;
+        i++
+    ) {
+        if (
+            !raceSimulationState.active
+        ) {
+            break;
+        }
+
+        const result =
+            advanceRaceProgression();
+
+        if (!result) {
+            break;
+        }
+
+        results.push(result);
+
+        // Stop when something important
+        // happens.
+        if (
+            result.situation ||
+            result.importantPoint
+        ) {
+            break;
+        }
+
+        if (
+            raceSimulationState.phase ===
+            "finale"
+        ) {
+            break;
+        }
+    }
+
+    return results;
+}
+
+
+// ============================================
+// 17. GET PROGRESSION STATUS
+// ============================================
+
+function getRaceProgressionStatus() {
+    return {
+        currentKm:
+            getCurrentRaceKm(),
+
+        totalKm:
+            raceSimulationState.totalKm,
+
+        remainingKm:
+            getRemainingRaceDistance(),
+
+        progress:
+            getRaceProgress(),
+
+        phase:
+            raceSimulationState.phase,
+
+        totalSteps:
+            raceProgressionState.totalSteps,
+
+        lastStep:
+            raceProgressionState.lastStep,
+
+        nextImportantPoint:
+            getNextRaceImportantPoint(
+                getCurrentRaceKm(),
+                game.currentRace
+            )
+    };
+}
+
+
+// ============================================
+// 18. GET PROGRESSION HISTORY
+// ============================================
+
+function getRaceProgressionHistory() {
+    return [
+        ...raceProgressionState.stepHistory
+    ];
+}
+
+
+// ============================================
+// 19. RESET
+// ============================================
+
+function resetRaceProgressionState() {
+    raceProgressionState.lastStep = null;
+    raceProgressionState.stepHistory = [];
+    raceProgressionState.totalSteps = 0;
+    raceProgressionState.distanceTravelled = 0;
+    raceProgressionState.nextDecisionKm = null;
+}
+// ============================================
+// CYCLING CAREER
+// script.js — Del 24
+// Race Situation Generator
+// ============================================
+
+
+// ============================================
+// 1. SITUATION GENERATOR STATE
+// ============================================
+
+const raceSituationGeneratorState = {
+    lastGenerated: null,
+    history: [],
+    situationsGenerated: 0,
+    situationsSinceDecision: 0,
+    lastDecisionKm: null
+};
+
+
+// ============================================
+// 2. SITUATION FREQUENCY
+// ============================================
+
+const raceSituationFrequency = {
+    earlyRace: {
+        breakawayAttempt: 0.35,
+        attack: 0.08,
+        positionBattle: 0.10,
+        crosswinds: 0.08,
+        mechanical: 0.03,
+        crash: 0.02,
+        weatherChange: 0.04,
+        fatigue: 0.03
+    },
+
+    midRace: {
+        breakawayAttempt: 0.08,
+        attack: 0.12,
+        positionBattle: 0.12,
+        crosswinds: 0.10,
+        mechanical: 0.03,
+        crash: 0.02,
+        weatherChange: 0.05,
+        fatigue: 0.06
+    },
+
+    finale: {
+        breakawayAttempt: 0.02,
+        attack: 0.28,
+        positionBattle: 0.30,
+        crosswinds: 0.12,
+        mechanical: 0.04,
+        crash: 0.03,
+        weatherChange: 0.04,
+        fatigue: 0.16
+    }
+};
+
+
+// ============================================
+// 3. SITUATION COOLDOWNS
+// ============================================
+
+const raceSituationCooldowns = {
+    breakawayAttempt: 8,
+    attack: 5,
+    positionBattle: 4,
+    crosswinds: 10,
+    mechanical: 12,
+    crash: 12,
+    weatherChange: 15,
+    fatigue: 6,
+    climb: 3,
+    descent: 3,
+    finale: 2
+};
+
+
+// ============================================
+// 4. LAST OCCURRENCE
+// ============================================
+
+function getLastSituationOfType(type) {
+    for (
+        let i =
+            raceSituationGeneratorState.history.length - 1;
+        i >= 0;
+        i--
+    ) {
+        const situation =
+            raceSituationGeneratorState.history[i];
+
+        if (situation.type === type) {
+            return situation;
+        }
+    }
+
+    return null;
+}
+
+
+// ============================================
+// 5. COOLDOWN CHECK
+// ============================================
+
+function isSituationOnCooldown(type) {
+    const last =
+        getLastSituationOfType(type);
+
+    if (!last) {
+        return false;
+    }
+
+    const cooldown =
+        raceSituationCooldowns[type] || 0;
+
+    const currentKm =
+        getCurrentRaceKm();
+
+    return (
+        currentKm - last.km <
+        cooldown
+    );
+}
+
+
+// ============================================
+// 6. BASIC ELIGIBILITY
+// ============================================
+
+function canGenerateSituation(type) {
+    if (!raceSimulationState.active) {
+        return false;
+    }
+
+    if (
+        raceSimulationState.phase ===
+        "beforeRace"
+    ) {
+        return false;
+    }
+
+    if (
+        raceSimulationState.phase ===
+        "completed"
+    ) {
+        return false;
+    }
+
+    if (isSituationOnCooldown(type)) {
+        return false;
+    }
+
+    return true;
+}
+
+
+// ============================================
+// 7. TERRAIN HELPERS
+// ============================================
+
+function getCurrentRaceTerrain() {
+    const race =
+        game.currentRace;
+
+    if (!race) {
+        return null;
+    }
+
+    const currentKm =
+        getCurrentRaceKm();
+
+    // Check climbs first.
+    if (Array.isArray(race.climbs)) {
+        const climb =
+            race.climbs.find(
+                currentClimb => {
+                    const start =
+                        currentClimb.startKm ?? 0;
+
+                    const end =
+                        currentClimb.endKm ??
+                        start +
+                        (currentClimb.length || 1);
+
+                    return (
+                        currentKm >= start &&
+                        currentKm <= end
+                    );
+                }
+            );
+
+        if (climb) {
+            return "mountain";
+        }
+    }
+
+    if (race.terrain) {
+        return (
+            race.terrain.id ||
+            race.terrain
+        );
+    }
+
+    return "mixed";
+}
+
+
+// ============================================
+// 8. WEATHER HELPERS
+// ============================================
+
+function getCurrentRaceWeather() {
+    const race =
+        game.currentRace;
+
+    if (!race) {
+        return null;
+    }
+
+    if (!race.weather) {
+        return null;
+    }
+
+    return (
+        race.weather.type ||
+        race.weather.id ||
+        race.weather
+    );
+}
+
+
+// ============================================
+// 9. GROUP SITUATION CHECKS
+// ============================================
+
+function hasActiveBreakaway() {
+    return getActiveRaceGroups().some(
+        group =>
+            group.type === "breakaway" &&
+            group.riders.length > 0
+    );
+}
+
+
+function hasActiveChase() {
+    return getActiveRaceGroups().some(
+        group =>
+            group.type === "chase" &&
+            group.riders.length > 0
+    );
+}
+
+
+function isPlayerInBreakaway() {
+    const playerData =
+        getSynchronizedPlayerRaceData();
+
+    return (
+        playerData &&
+        playerData.groupType ===
+        "breakaway"
+    );
+}
+
+
+function isPlayerInChase() {
+    const playerData =
+        getSynchronizedPlayerRaceData();
+
+    return (
+        playerData &&
+        playerData.groupType ===
+        "chase"
+    );
+}
+
+
+// ============================================
+// 10. PLAYER SITUATION RELEVANCE
+// ============================================
+
+function isSituationRelevantToPlayer(
+    type
+) {
+    const playerData =
+        getSynchronizedPlayerRaceData();
+
+    if (!playerData) {
+        return false;
+    }
+
+    switch (type) {
+        case "breakawayAttempt":
+            return true;
+
+        case "attack":
+            return (
+                playerData.groupType ===
+                    "peloton" ||
+                playerData.groupType ===
+                    "front" ||
+                playerData.groupType ===
+                    "chase" ||
+                playerData.groupType ===
+                    "breakaway"
+            );
+
+        case "positionBattle":
+            return (
+                playerData.position <= 80
+            );
+
+        case "crosswinds":
+            return true;
+
+        case "mechanical":
+            return true;
+
+        case "crash":
+            return (
+                playerData.position <= 100
+            );
+
+        case "weatherChange":
+            return true;
+
+        case "fatigue":
+            return (
+                playerData.energy <= 55 ||
+                playerData.fatigue >= 45
+            );
+
+        case "climb":
+            return true;
+
+        case "descent":
+            return true;
+
+        case "finale":
+            return true;
+
+        default:
+            return true;
+    }
+}
+
+
+// ============================================
+// 11. CREATE SITUATION
+// ============================================
+
+function generateRaceSituation(
+    type,
+    data = {}
+) {
+    if (!canGenerateSituation(type)) {
+        return null;
+    }
+
+    if (
+        !isSituationRelevantToPlayer(type)
+    ) {
+        return null;
+    }
+
+    const situation =
+        createRaceSituation(
+            type,
+            {
+                description:
+                    data.description || "",
+
+                severity:
+                    data.severity || "normal",
+
+                playerRelevant: true,
+
+                ...data
+            }
+        );
+
+    if (!situation) {
+        return null;
+    }
+
+    raceSituationGeneratorState.lastGenerated =
+        situation;
+
+    raceSituationGeneratorState.history.push(
+        situation
+    );
+
+    raceSituationGeneratorState.situationsGenerated++;
+
+    raceSituationGeneratorState.situationsSinceDecision++;
+
+    return situation;
+}
+
+
+// ============================================
+// 12. BREAKAWAY SITUATION
+// ============================================
+
+function generateBreakawaySituation() {
+    if (hasActiveBreakaway()) {
+        return null;
+    }
+
+    return generateRaceSituation(
+        "breakawayAttempt",
+        {
+            severity: "normal",
+
+            description:
+                "Several riders are trying to get clear."
+        }
+    );
+}
+
+
+// ============================================
+// 13. ATTACK SITUATION
+// ============================================
+
+function generateAttackSituation() {
+    const riders =
+        getRaceWorldRivals();
+
+    if (!riders.length) {
+        return null;
+    }
+
+    const possibleAttackers =
+        riders.filter(
+            rider =>
+                rider.status === "active" &&
+                rider.energy >= 40
+        );
+
+    if (!possibleAttackers.length) {
+        return null;
+    }
+
+    const attacker =
+        possibleAttackers[
+            Math.floor(
+                Math.random() *
+                possibleAttackers.length
+            )
+        ];
+
+    const strength =
+        calculateInteractionStrength(
+            attacker,
+            "attack"
+        );
+
+    return generateRaceSituation(
+        "attack",
+        {
+            riderId:
+                attacker.id,
+
+            severity:
+                strength >= 75
+                    ? "high"
+                    : "normal",
+
+            description:
+                `${attacker.name} attacks the group.`
+        }
+    );
+}
+
+
+// ============================================
+// 14. POSITION BATTLE
+// ============================================
+
+function generatePositionBattleSituation() {
+    const playerData =
+        getSynchronizedPlayerRaceData();
+
+    if (!playerData) {
+        return null;
+    }
+
+    return generateRaceSituation(
+        "positionBattle",
+        {
+            severity:
+                playerData.position <= 30
+                    ? "high"
+                    : "normal",
+
+            description:
+                "The fight for position is intensifying."
+        }
+    );
+}
+
+
+// ============================================
+// 15. CROSSWIND SITUATION
+// ============================================
+
+function generateCrosswindSituation() {
+    const weather =
+        getCurrentRaceWeather();
+
+    const race =
+        game.currentRace;
+
+    const hasCrosswindFeature =
+        race &&
+        Array.isArray(race.features) &&
+        race.features.some(
+            feature =>
+                feature === "crosswinds" ||
+                feature?.type === "crosswinds"
+        );
+
+    if (
+        weather !== "strongWind" &&
+        !hasCrosswindFeature
+    ) {
+        return null;
+    }
+
+    return generateRaceSituation(
+        "crosswinds",
+        {
+            severity: "high",
+
+            description:
+                "Strong crosswinds are affecting the race."
+        }
+    );
+}
+
+
+// ============================================
+// 16. MECHANICAL SITUATION
+// ============================================
+
+function generateMechanicalSituation() {
+    const playerData =
+        getSynchronizedPlayerRaceData();
+
+    if (!playerData) {
+        return null;
+    }
+
+    const mechanicalTypes = [
+        "frontWheelPuncture",
+        "rearWheelPuncture",
+        "gearProblem",
+        "chainProblem",
+        "bikeChange"
+    ];
+
+    const mechanicalType =
+        mechanicalTypes[
+            Math.floor(
+                Math.random() *
+                mechanicalTypes.length
+            )
+        ];
+
+    return generateRaceSituation(
+        "mechanical",
+        {
+            mechanicalType,
+
+            severity:
+                "high",
+
+            description:
+                "A mechanical problem interrupts the race."
+        }
+    );
+}
+
+
+// ============================================
+// 17. CRASH SITUATION
+// ============================================
+
+function generateCrashSituation() {
+    return generateRaceSituation(
+        "crash",
+        {
+            severity:
+                "high",
+
+            description:
+                "A crash has disrupted the race."
+        }
+    );
+}
+
+
+// ============================================
+// 18. WEATHER CHANGE
+// ============================================
+
+function generateWeatherChangeSituation() {
+    const weatherTypes = [
+        "sun",
+        "cloudy",
+        "rain",
+        "strongWind",
+        "cold",
+        "heat",
+        "fog"
+    ];
+
+    const current =
+        getCurrentRaceWeather();
+
+    const alternatives =
+        weatherTypes.filter(
+            weather =>
+                weather !== current
+        );
+
+    if (!alternatives.length) {
+        return null;
+    }
+
+    const newWeather =
+        alternatives[
+            Math.floor(
+                Math.random() *
+                alternatives.length
+            )
+        ];
+
+    return generateRaceSituation(
+        "weatherChange",
+        {
+            newWeather,
+
+            severity:
+                "normal",
+
+            description:
+                "The weather is changing."
+        }
+    );
+}
+
+
+// ============================================
+// 19. FATIGUE SITUATION
+// ============================================
+
+function generateFatigueSituation() {
+    const playerData =
+        getSynchronizedPlayerRaceData();
+
+    if (!playerData) {
+        return null;
+    }
+
+    if (
+        playerData.energy > 55 &&
+        playerData.fatigue < 45
+    ) {
+        return null;
+    }
+
+    return generateRaceSituation(
+        "fatigue",
+        {
+            severity:
+                playerData.energy <= 25
+                    ? "high"
+                    : "normal",
+
+            description:
+                "Fatigue is beginning to affect the race."
+        }
+    );
+}
+
+
+// ============================================
+// 20. CLIMB SITUATION
+// ============================================
+
+function generateClimbSituation() {
+    const terrain =
+        getCurrentRaceTerrain();
+
+    if (
+        terrain !== "mountain" &&
+        terrain !== "mediumMountain" &&
+        terrain !== "hills"
+    ) {
+        return null;
+    }
+
+    return generateRaceSituation(
+        "climb",
+        {
+            severity:
+                terrain === "mountain"
+                    ? "high"
+                    : "normal",
+
+            description:
+                "The road is climbing and the group is changing."
+        }
+    );
+}
+
+
+// ============================================
+// 21. DESCENT SITUATION
+// ============================================
+
+function generateDescentSituation() {
+    const race =
+        game.currentRace;
+
+    if (!race) {
+        return null;
+    }
+
+    const technical =
+        Array.isArray(race.features) &&
+        race.features.some(
+            feature =>
+                feature === "technicalDescents" ||
+                feature?.type === "technicalDescents"
+        );
+
+    if (!technical) {
+        return null;
+    }
+
+    return generateRaceSituation(
+        "descent",
+        {
+            severity:
+                "normal",
+
+            description:
+                "A technical descent is approaching."
+        }
+    );
+}
+
+
+// ============================================
+// 22. FINALE SITUATION
+// ============================================
+
+function generateFinaleSituation() {
+    if (
+        raceSimulationState.phase !==
+        "finale"
+    ) {
+        return null;
+    }
+
+    return generateRaceSituation(
+        "finale",
+        {
+            severity:
+                "high",
+
+            description:
+                "The race is entering its decisive finale."
+        }
+    );
+}
+
+
+// ============================================
+// 23. WEIGHTED RANDOM TYPE
+// ============================================
+
+function chooseWeightedSituationType() {
+    const phase =
+        raceSimulationState.phase;
+
+    const weights =
+        raceSituationFrequency[phase];
+
+    if (!weights) {
+        return null;
+    }
+
+    const entries =
+        Object.entries(weights);
+
+    const total =
+        entries.reduce(
+            (sum, [, weight]) =>
+                sum + weight,
+            0
+        );
+
+    let random =
+        Math.random() * total;
+
+    for (
+        const [type, weight]
+        of entries
+    ) {
+        random -= weight;
+
+        if (random <= 0) {
+            return type;
+        }
+    }
+
+    return entries[0][0];
+}
+
+
+// ============================================
+// 24. GENERATE RANDOM SITUATION
+// ============================================
+
+function generateRandomRaceSituation() {
+    if (
+        !raceSimulationState.active
+    ) {
+        return null;
+    }
+
+    const type =
+        chooseWeightedSituationType();
+
+    if (!type) {
+        return null;
+    }
+
+    switch (type) {
+        case "breakawayAttempt":
+            return generateBreakawaySituation();
+
+        case "attack":
+            return generateAttackSituation();
+
+        case "positionBattle":
+            return generatePositionBattleSituation();
+
+        case "crosswinds":
+            return generateCrosswindSituation();
+
+        case "mechanical":
+            return generateMechanicalSituation();
+
+        case "crash":
+            return generateCrashSituation();
+
+        case "weatherChange":
+            return generateWeatherChangeSituation();
+
+        case "fatigue":
+            return generateFatigueSituation();
+
+        default:
+            return null;
+    }
+}
+
+
+// ============================================
+// 25. CHECK IMPORTANT TERRAIN
+// ============================================
+
+function checkImportantTerrainSituation() {
+    const terrain =
+        getCurrentRaceTerrain();
+
+    if (
+        terrain === "mountain" ||
+        terrain === "mediumMountain" ||
+        terrain === "hills"
+    ) {
+        if (
+            !isSituationOnCooldown("climb")
+        ) {
+            return generateClimbSituation();
+        }
+    }
+
+    return null;
+}
+
+
+// ============================================
+// 26. CHECK FINALE
+// ============================================
+
+function checkFinaleSituation() {
+    if (
+        raceSimulationState.phase !==
+        "finale"
+    ) {
+        return null;
+    }
+
+    if (
+        isSituationOnCooldown("finale")
+    ) {
+        return null;
+    }
+
+    return generateFinaleSituation();
+}
+
+
+// ============================================
+// 27. GENERATE NEXT IMPORTANT SITUATION
+// ============================================
+
+function generateNextImportantRaceSituation() {
+    if (
+        !raceSimulationState.active
+    ) {
+        return null;
+    }
+
+    // Terrain takes priority.
+    const terrainSituation =
+        checkImportantTerrainSituation();
+
+    if (terrainSituation) {
+        return terrainSituation;
+    }
+
+    // Finale takes priority once reached.
+    const finaleSituation =
+        checkFinaleSituation();
+
+    if (finaleSituation) {
+        return finaleSituation;
+    }
+
+    // Otherwise choose from normal
+    // race events.
+    return generateRandomRaceSituation();
+}
+
+
+// ============================================
+// 28. SHOULD STOP FOR PLAYER DECISION?
+// ============================================
+
+function shouldStopForRaceDecision(
+    situation
+) {
+    if (!situation) {
+        return false;
+    }
+
+    if (
+        situation.playerRelevant === false
+    ) {
+        return false;
+    }
+
+    const importantTypes = [
+        "breakawayAttempt",
+        "attack",
+        "positionBattle",
+        "crosswinds",
+        "mechanical",
+        "crash",
+        "climb",
+        "descent",
+        "fatigue",
+        "finale"
+    ];
+
+    if (
+        importantTypes.includes(
+            situation.type
+        )
+    ) {
+        return true;
+    }
+
+    return false;
+}
+
+
+// ============================================
+// 29. MARK DECISION
+// ============================================
+
+function markRaceDecisionMade() {
+    raceSituationGeneratorState.situationsSinceDecision =
+        0;
+
+    raceSituationGeneratorState.lastDecisionKm =
+        getCurrentRaceKm();
+}
+
+
+// ============================================
+// 30. GET LAST SITUATION
+// ============================================
+
+function getLastGeneratedRaceSituation() {
+    return raceSituationGeneratorState.lastGenerated;
+}
+
+
+// ============================================
+// 31. GET SITUATION HISTORY
+// ============================================
+
+function getRaceSituationHistory() {
+    return [
+        ...raceSituationGeneratorState.history
+    ];
+}
+
+
+// ============================================
+// 32. SITUATION SUMMARY
+// ============================================
+
+function getRaceSituationGeneratorSummary() {
+    return {
+        situationsGenerated:
+            raceSituationGeneratorState.situationsGenerated,
+
+        situationsSinceDecision:
+            raceSituationGeneratorState.situationsSinceDecision,
+
+        lastDecisionKm:
+            raceSituationGeneratorState.lastDecisionKm,
+
+        lastSituation:
+            raceSituationGeneratorState.lastGenerated
+                ? {
+                    type:
+                        raceSituationGeneratorState.lastGenerated.type,
+
+                    km:
+                        raceSituationGeneratorState.lastGenerated.km,
+
+                    description:
+                        raceSituationGeneratorState.lastGenerated.description
+                }
+                : null
+    };
+}
+
+
+// ============================================
+// 33. RESET
+// ============================================
+
+function resetRaceSituationGeneratorState() {
+    raceSituationGeneratorState.lastGenerated = null;
+    raceSituationGeneratorState.history = [];
+    raceSituationGeneratorState.situationsGenerated = 0;
+    raceSituationGeneratorState.situationsSinceDecision = 0;
+    raceSituationGeneratorState.lastDecisionKm = null;
+}
