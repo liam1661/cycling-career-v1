@@ -20962,3 +20962,4404 @@ function debugStageRaceSummary() {
 
     return summary;
 }
+// ============================================
+// CYCLING CAREER
+// script.js — Del 29
+// Calendar Engine
+// ============================================
+
+const calendarState = {
+    initialized: false,
+
+    selectedRaceId: null,
+
+    playerCalendar: [],
+
+    raceRequests: [],
+
+    selectionStatuses: [
+        "requested",
+        "accepted",
+        "reserve",
+        "rejected",
+        "alternative"
+    ],
+
+    requestPriorities: [
+        "high",
+        "medium",
+        "low"
+    ],
+
+    requestReasons: [
+        "experience",
+        "result",
+        "preparation",
+        "support",
+        "development"
+    ]
+};
+
+
+// ============================================
+// CALENDAR — DATABASE ACCESS
+// ============================================
+
+function getCalendarRaceDatabase() {
+    if (typeof raceDatabase === "undefined") {
+        console.warn("Race database is not available.");
+        return [];
+    }
+
+    if (!Array.isArray(raceDatabase)) {
+        console.warn("Race database has an invalid format.");
+        return [];
+    }
+
+    return raceDatabase;
+}
+
+
+function getCalendarRaces() {
+    return getCalendarRaceDatabase();
+}
+
+
+function getCalendarRaceById(raceId) {
+    if (!raceId) {
+        return null;
+    }
+
+    return getCalendarRaces().find(race => race.id === raceId) || null;
+}
+
+
+// ============================================
+// CALENDAR — RACE NORMALIZATION
+// ============================================
+
+function normalizeCalendarRace(race) {
+    if (!race) {
+        return null;
+    }
+
+    return {
+        ...race,
+
+        id: race.id || `race_${Date.now()}_${Math.random()}`,
+
+        name: race.name || "Unknown Race",
+
+        startDate: race.startDate || null,
+        endDate: race.endDate || race.startDate || null,
+
+        type: race.type || "oneDay",
+        level: race.level || "continental",
+
+        country: race.country || "Unknown",
+
+        distance: race.distance || null,
+
+        stages: Array.isArray(race.stages)
+            ? race.stages
+            : [],
+
+        terrain: race.terrain || null,
+        finishType: race.finishType || null,
+
+        status: getRaceStatus(
+            race.startDate,
+            race.endDate
+        )
+    };
+}
+
+
+function getNormalizedCalendarRaces() {
+    return getCalendarRaces()
+        .map(normalizeCalendarRace)
+        .filter(Boolean);
+}
+
+
+// ============================================
+// CALENDAR — DATE HELPERS
+// ============================================
+
+function calendarDateToNumber(dateString) {
+    if (!dateString) {
+        return null;
+    }
+
+    const date = new Date(`${dateString}T00:00:00`);
+
+    if (Number.isNaN(date.getTime())) {
+        return null;
+    }
+
+    return date.getTime();
+}
+
+
+function isCalendarDateBefore(dateA, dateB) {
+    const a = calendarDateToNumber(dateA);
+    const b = calendarDateToNumber(dateB);
+
+    if (a === null || b === null) {
+        return false;
+    }
+
+    return a < b;
+}
+
+
+function isCalendarDateAfter(dateA, dateB) {
+    const a = calendarDateToNumber(dateA);
+    const b = calendarDateToNumber(dateB);
+
+    if (a === null || b === null) {
+        return false;
+    }
+
+    return a > b;
+}
+
+
+function isCalendarDateWithinRange(date, startDate, endDate) {
+    const current = calendarDateToNumber(date);
+    const start = calendarDateToNumber(startDate);
+    const end = calendarDateToNumber(endDate);
+
+    if (
+        current === null ||
+        start === null ||
+        end === null
+    ) {
+        return false;
+    }
+
+    return current >= start && current <= end;
+}
+
+
+// ============================================
+// CALENDAR — RACE STATUS
+// ============================================
+
+function getRaceStatus(startDate, endDate, currentDate = null) {
+    const today =
+        currentDate ||
+        (
+            typeof getCurrentDate === "function"
+                ? getCurrentDate()
+                : game.career.currentDate
+        );
+
+    if (!startDate) {
+        return "upcoming";
+    }
+
+    const actualEndDate = endDate || startDate;
+
+    if (isCalendarDateBefore(today, startDate)) {
+        return "upcoming";
+    }
+
+    if (
+        isCalendarDateWithinRange(
+            today,
+            startDate,
+            actualEndDate
+        )
+    ) {
+        return "ongoing";
+    }
+
+    if (isCalendarDateAfter(today, actualEndDate)) {
+        return "completed";
+    }
+
+    return "upcoming";
+}
+
+
+function getCalendarRaceStatus(race) {
+    if (!race) {
+        return "upcoming";
+    }
+
+    return getRaceStatus(
+        race.startDate,
+        race.endDate
+    );
+}
+
+
+// ============================================
+// CALENDAR — CURRENT DATE
+// ============================================
+
+function getCalendarCurrentDate() {
+    if (typeof getCurrentDate === "function") {
+        return getCurrentDate();
+    }
+
+    if (
+        game &&
+        game.career &&
+        game.career.currentDate
+    ) {
+        return game.career.currentDate;
+    }
+
+    return "2026-01-01";
+}
+
+
+// ============================================
+// CALENDAR — UPCOMING / CURRENT / COMPLETED
+// ============================================
+
+function getUpcomingCalendarRaces(limit = 10) {
+    const currentDate = getCalendarCurrentDate();
+
+    return getNormalizedCalendarRaces()
+        .filter(race => {
+            return isCalendarDateAfter(
+                race.startDate,
+                currentDate
+            );
+        })
+        .sort((a, b) => {
+            return (
+                calendarDateToNumber(a.startDate) -
+                calendarDateToNumber(b.startDate)
+            );
+        })
+        .slice(0, limit);
+}
+
+
+function getOngoingCalendarRaces() {
+    const currentDate = getCalendarCurrentDate();
+
+    return getNormalizedCalendarRaces()
+        .filter(race => {
+            return getRaceStatus(
+                race.startDate,
+                race.endDate,
+                currentDate
+            ) === "ongoing";
+        });
+}
+
+
+function getCompletedCalendarRaces(limit = 10) {
+    const currentDate = getCalendarCurrentDate();
+
+    return getNormalizedCalendarRaces()
+        .filter(race => {
+            return isCalendarDateAfter(
+                currentDate,
+                race.endDate || race.startDate
+            );
+        })
+        .sort((a, b) => {
+            return (
+                calendarDateToNumber(b.startDate) -
+                calendarDateToNumber(a.startDate)
+            );
+        })
+        .slice(0, limit);
+}
+
+
+function getNextCalendarRace() {
+    const races = getUpcomingCalendarRaces(1);
+
+    return races.length > 0
+        ? races[0]
+        : null;
+}
+
+
+// ============================================
+// CALENDAR — FILTERS
+// ============================================
+
+function getCalendarRacesByType(type) {
+    if (!type) {
+        return [];
+    }
+
+    return getNormalizedCalendarRaces()
+        .filter(race => race.type === type);
+}
+
+
+function getCalendarRacesByLevel(level) {
+    if (!level) {
+        return [];
+    }
+
+    return getNormalizedCalendarRaces()
+        .filter(race => race.level === level);
+}
+
+
+function getCalendarRacesByCountry(country) {
+    if (!country) {
+        return [];
+    }
+
+    return getNormalizedCalendarRaces()
+        .filter(race => race.country === country);
+}
+
+
+function getCalendarRacesByMonth(month, year = null) {
+    const targetYear =
+        year ||
+        Number(getCalendarCurrentDate().slice(0, 4));
+
+    return getNormalizedCalendarRaces()
+        .filter(race => {
+            if (!race.startDate) {
+                return false;
+            }
+
+            const date = new Date(
+                `${race.startDate}T00:00:00`
+            );
+
+            return (
+                date.getFullYear() === targetYear &&
+                date.getMonth() + 1 === month
+            );
+        });
+}
+
+
+function getCalendarRacesBetween(
+    startDate,
+    endDate
+) {
+    return getNormalizedCalendarRaces()
+        .filter(race => {
+            if (!race.startDate) {
+                return false;
+            }
+
+            const raceStart = calendarDateToNumber(
+                race.startDate
+            );
+
+            const raceEnd = calendarDateToNumber(
+                race.endDate || race.startDate
+            );
+
+            const rangeStart = calendarDateToNumber(
+                startDate
+            );
+
+            const rangeEnd = calendarDateToNumber(
+                endDate
+            );
+
+            if (
+                raceStart === null ||
+                raceEnd === null ||
+                rangeStart === null ||
+                rangeEnd === null
+            ) {
+                return false;
+            }
+
+            // Includes races that overlap the requested period.
+            return (
+                raceStart <= rangeEnd &&
+                raceEnd >= rangeStart
+            );
+        });
+}
+
+
+// ============================================
+// CALENDAR — PLAYER CALENDAR ENTRIES
+// ============================================
+
+function createPlayerCalendarEntry(
+    raceId,
+    status = "requested",
+    role = null,
+    requestPriority = "medium",
+    requestReason = null
+) {
+    const race = getCalendarRaceById(raceId);
+
+    if (!race) {
+        console.warn(
+            `Cannot create calendar entry. Race not found: ${raceId}`
+        );
+
+        return null;
+    }
+
+    return {
+        id: `calendar_${Date.now()}_${Math.random()}`,
+
+        raceId: race.id,
+        raceName: race.name,
+
+        startDate: race.startDate,
+        endDate: race.endDate || race.startDate,
+
+        status,
+        role,
+
+        requestPriority,
+        requestReason,
+
+        createdAt: getCalendarCurrentDate(),
+
+        completed: false
+    };
+}
+
+
+function addPlayerCalendarEntry(entry) {
+    if (!entry) {
+        return false;
+    }
+
+    const existing = calendarState.playerCalendar.find(
+        item => item.raceId === entry.raceId
+    );
+
+    if (existing) {
+        return false;
+    }
+
+    calendarState.playerCalendar.push(entry);
+
+    return true;
+}
+
+
+function getPlayerCalendar() {
+    return [...calendarState.playerCalendar]
+        .sort((a, b) => {
+            return (
+                calendarDateToNumber(a.startDate) -
+                calendarDateToNumber(b.startDate)
+            );
+        });
+}
+
+
+function getPlayerCalendarEntry(raceId) {
+    return calendarState.playerCalendar.find(
+        entry => entry.raceId === raceId
+    ) || null;
+}
+
+
+// ============================================
+// CALENDAR — RACE REQUESTS
+// ============================================
+
+function isValidCalendarPriority(priority) {
+    return calendarState.requestPriorities.includes(
+        priority
+    );
+}
+
+
+function isValidCalendarReason(reason) {
+    return calendarState.requestReasons.includes(
+        reason
+    );
+}
+
+
+function createRaceRequest(
+    raceId,
+    priority = "medium",
+    reason = "development"
+) {
+    const race = getCalendarRaceById(raceId);
+
+    if (!race) {
+        console.warn(
+            `Cannot create race request. Race not found: ${raceId}`
+        );
+
+        return null;
+    }
+
+    if (!isValidCalendarPriority(priority)) {
+        console.warn(
+            `Invalid calendar priority: ${priority}`
+        );
+
+        return null;
+    }
+
+    if (!isValidCalendarReason(reason)) {
+        console.warn(
+            `Invalid calendar reason: ${reason}`
+        );
+
+        return null;
+    }
+
+    return {
+        id: `request_${Date.now()}_${Math.random()}`,
+
+        raceId: race.id,
+        raceName: race.name,
+
+        priority,
+        reason,
+
+        status: "requested",
+
+        createdAt: getCalendarCurrentDate(),
+
+        responseDate: null,
+        responseNote: null,
+
+        alternativeRaceId: null
+    };
+}
+
+
+function addRaceRequest(request) {
+    if (!request) {
+        return false;
+    }
+
+    const existing = calendarState.raceRequests.find(
+        item => item.raceId === request.raceId
+    );
+
+    if (existing) {
+        return false;
+    }
+
+    calendarState.raceRequests.push(request);
+
+    return true;
+}
+
+
+function requestRace(
+    raceId,
+    priority = "medium",
+    reason = "development"
+) {
+    const request = createRaceRequest(
+        raceId,
+        priority,
+        reason
+    );
+
+    if (!request) {
+        return null;
+    }
+
+    if (!addRaceRequest(request)) {
+        return null;
+    }
+
+    return request;
+}
+
+
+function getRaceRequests() {
+    return [...calendarState.raceRequests];
+}
+
+
+function getRaceRequest(raceId) {
+    return calendarState.raceRequests.find(
+        request => request.raceId === raceId
+    ) || null;
+}
+
+
+// ============================================
+// CALENDAR — SELECTION DECISIONS
+// ============================================
+
+function updateRaceSelection(
+    raceId,
+    status,
+    role = null,
+    note = null,
+    alternativeRaceId = null
+) {
+    const request = getRaceRequest(raceId);
+
+    if (!request) {
+        console.warn(
+            `No race request found for: ${raceId}`
+        );
+
+        return false;
+    }
+
+    if (
+        !calendarState.selectionStatuses.includes(status)
+    ) {
+        console.warn(
+            `Invalid selection status: ${status}`
+        );
+
+        return false;
+    }
+
+    request.status = status;
+    request.responseDate = getCalendarCurrentDate();
+    request.responseNote = note;
+    request.alternativeRaceId =
+        alternativeRaceId || null;
+
+    if (
+        status === "accepted" ||
+        status === "reserve"
+    ) {
+        let entry = getPlayerCalendarEntry(raceId);
+
+        if (!entry) {
+            entry = createPlayerCalendarEntry(
+                raceId,
+                status,
+                role,
+                request.priority,
+                request.reason
+            );
+
+            addPlayerCalendarEntry(entry);
+        } else {
+            entry.status = status;
+            entry.role = role;
+        }
+    }
+
+    return true;
+}
+
+
+// ============================================
+// CALENDAR — PLAYER RACE ROLE
+// ============================================
+
+function setPlayerRaceRole(raceId, role) {
+    const entry = getPlayerCalendarEntry(raceId);
+
+    if (!entry) {
+        return false;
+    }
+
+    entry.role = role;
+
+    return true;
+}
+
+
+function getPlayerRaceRole(raceId) {
+    const entry = getPlayerCalendarEntry(raceId);
+
+    return entry
+        ? entry.role
+        : null;
+}
+
+
+// ============================================
+// CALENDAR — SELECTION HELPERS
+// ============================================
+
+function getAcceptedCalendarRaces() {
+    return getPlayerCalendar()
+        .filter(entry => entry.status === "accepted");
+}
+
+
+function getReserveCalendarRaces() {
+    return getPlayerCalendar()
+        .filter(entry => entry.status === "reserve");
+}
+
+
+function getRequestedCalendarRaces() {
+    return getRaceRequests()
+        .filter(request => request.status === "requested");
+}
+
+
+function getRejectedCalendarRaces() {
+    return getRaceRequests()
+        .filter(request => request.status === "rejected");
+}
+
+
+function getAlternativeCalendarRaces() {
+    return getRaceRequests()
+        .filter(request => request.status === "alternative");
+}
+
+
+// ============================================
+// CALENDAR — RACE RELEVANCE
+// ============================================
+
+function isRaceOnPlayerCalendar(raceId) {
+    return Boolean(
+        getPlayerCalendarEntry(raceId)
+    );
+}
+
+
+function isRaceRequested(raceId) {
+    return Boolean(
+        getRaceRequest(raceId)
+    );
+}
+
+
+function isRaceAccepted(raceId) {
+    const entry = getPlayerCalendarEntry(raceId);
+
+    return Boolean(
+        entry &&
+        entry.status === "accepted"
+    );
+}
+
+
+function getPlayerCalendarRacesForSeason(year) {
+    return getPlayerCalendar()
+        .filter(entry => {
+            return (
+                entry.startDate &&
+                entry.startDate.startsWith(
+                    String(year)
+                )
+            );
+        });
+}
+
+
+// ============================================
+// CALENDAR — CAREER EVENTS
+// ============================================
+
+function createCalendarRaceEvent(raceId) {
+    const race = getCalendarRaceById(raceId);
+
+    if (!race) {
+        return null;
+    }
+
+    if (typeof createCareerEvent !== "function") {
+        return null;
+    }
+
+    return createCareerEvent(
+        "race",
+        race.startDate,
+        {
+            raceId: race.id,
+            raceName: race.name,
+            raceLevel: race.level,
+            raceType: race.type
+        }
+    );
+}
+
+
+function createCalendarSelectionEvent(
+    raceId
+) {
+    const race = getCalendarRaceById(raceId);
+
+    if (!race) {
+        return null;
+    }
+
+    if (typeof createCareerEvent !== "function") {
+        return null;
+    }
+
+    return createCareerEvent(
+        "selection",
+        race.startDate,
+        {
+            raceId: race.id,
+            raceName: race.name
+        }
+    );
+}
+
+
+// ============================================
+// CALENDAR — INITIALIZATION
+// ============================================
+
+function initializeCalendar() {
+    calendarState.initialized = true;
+
+    console.log(
+        "Calendar Engine initialized."
+    );
+
+    console.log(
+        "Calendar races:",
+        getNormalizedCalendarRaces().length
+    );
+
+    return true;
+}
+
+
+// ============================================
+// CALENDAR — SUMMARY
+// ============================================
+
+function getCalendarSummary() {
+    const races = getNormalizedCalendarRaces();
+
+    return {
+        initialized: calendarState.initialized,
+
+        totalRaces: races.length,
+
+        currentDate: getCalendarCurrentDate(),
+
+        nextRace: getNextCalendarRace(),
+
+        ongoingRaces: getOngoingCalendarRaces(),
+
+        upcomingRaces: getUpcomingCalendarRaces(5),
+
+        completedRaces: getCompletedCalendarRaces(5),
+
+        playerCalendar: getPlayerCalendar(),
+
+        raceRequests: getRaceRequests(),
+
+        acceptedCount:
+            getAcceptedCalendarRaces().length,
+
+        reserveCount:
+            getReserveCalendarRaces().length,
+
+        requestedCount:
+            getRequestedCalendarRaces().length,
+
+        rejectedCount:
+            getRejectedCalendarRaces().length
+    };
+}
+
+
+// ============================================
+// CALENDAR — DEBUG
+// ============================================
+
+function debugCalendar() {
+    const summary = getCalendarSummary();
+
+    console.log(
+        "========== CALENDAR DEBUG =========="
+    );
+
+    console.log(
+        "Current date:",
+        summary.currentDate
+    );
+
+    console.log(
+        "Total races:",
+        summary.totalRaces
+    );
+
+    console.log(
+        "Next race:",
+        summary.nextRace
+    );
+
+    console.log(
+        "Player calendar:",
+        summary.playerCalendar
+    );
+
+    console.log(
+        "Race requests:",
+        summary.raceRequests
+    );
+
+    console.log(
+        "===================================="
+    );
+
+    return summary;
+}
+
+
+// ============================================
+// CALENDAR — RESET
+// ============================================
+
+function resetCalendarState() {
+    calendarState.initialized = false;
+    calendarState.selectedRaceId = null;
+    calendarState.playerCalendar = [];
+    calendarState.raceRequests = [];
+}
+
+
+// ============================================
+// CALENDAR — AUTO INITIALIZE
+// ============================================
+
+if (
+    typeof raceDatabase !== "undefined"
+) {
+    initializeCalendar();
+}
+// ============================================
+// CYCLING CAREER
+// script.js — Del 30
+// Career History & Records
+// ============================================
+
+const careerHistoryState = {
+    initialized: false,
+
+    raceResults: [],
+    seasons: [],
+    achievements: [],
+    majorMoments: [],
+
+    currentSeason: null
+};
+
+
+// ============================================
+// HISTORY — GENERAL ENTRIES
+// ============================================
+
+function addHistoryEntry(entry) {
+    if (!entry) {
+        return null;
+    }
+
+    if (!game.history) {
+        game.history = [];
+    }
+
+    const historyEntry = {
+        id: entry.id ||
+            `history_${Date.now()}_${Math.random()}`,
+
+        type: entry.type || "general",
+
+        title: entry.title || "Career Event",
+
+        description:
+            entry.description || "",
+
+        date:
+            entry.date ||
+            (
+                typeof getCurrentDate === "function"
+                    ? getCurrentDate()
+                    : game.career.currentDate
+            ),
+
+        data: entry.data || {},
+
+        createdAt: Date.now()
+    };
+
+    game.history.push(historyEntry);
+
+    return historyEntry;
+}
+
+
+function getCareerHistory() {
+    if (!game.history) {
+        game.history = [];
+    }
+
+    return [...game.history]
+        .sort((a, b) => {
+            return (
+                new Date(b.date) -
+                new Date(a.date)
+            );
+        });
+}
+
+
+function getHistoryEntriesByType(type) {
+    return getCareerHistory()
+        .filter(entry => entry.type === type);
+}
+
+
+function getRecentHistory(limit = 10) {
+    return getCareerHistory()
+        .slice(0, limit);
+}
+
+
+// ============================================
+// HISTORY — RACE RESULTS
+// ============================================
+
+function createCareerRaceHistoryEntry(
+    result
+) {
+    if (!result) {
+        return null;
+    }
+
+    const race = result.race || {};
+
+    return {
+        id:
+            result.id ||
+            `race_history_${Date.now()}_${Math.random()}`,
+
+        type: "race",
+
+        raceId:
+            result.raceId ||
+            race.id ||
+            null,
+
+        raceName:
+            result.raceName ||
+            race.name ||
+            "Unknown Race",
+
+        date:
+            result.date ||
+            race.startDate ||
+            getCalendarCurrentDate(),
+
+        position:
+            result.position ||
+            null,
+
+        time:
+            result.time ||
+            null,
+
+        gap:
+            result.gap ||
+            null,
+
+        team:
+            result.team ||
+            (
+                game.team
+                    ? game.team.name
+                    : null
+            ),
+
+        raceType:
+            result.raceType ||
+            race.type ||
+            null,
+
+        raceLevel:
+            result.raceLevel ||
+            race.level ||
+            null,
+
+        resultData: {
+            ...result
+        }
+    };
+}
+
+
+function saveCareerRaceResult(result) {
+    const entry =
+        createCareerRaceHistoryEntry(result);
+
+    if (!entry) {
+        return null;
+    }
+
+    careerHistoryState.raceResults.push(
+        entry
+    );
+
+    addHistoryEntry({
+        type: "race",
+
+        title: entry.raceName,
+
+        description:
+            entry.position
+                ? `Finished ${entry.position}.`
+                : "Race completed.",
+
+        date: entry.date,
+
+        data: entry
+    });
+
+    return entry;
+}
+
+
+function getCareerRaceResults() {
+    return [...careerHistoryState.raceResults]
+        .sort((a, b) => {
+            return (
+                new Date(b.date) -
+                new Date(a.date)
+            );
+        });
+}
+
+
+function getCareerRaceResult(raceId) {
+    return careerHistoryState.raceResults.find(
+        result => result.raceId === raceId
+    ) || null;
+}
+
+
+// ============================================
+// HISTORY — RESULT FILTERS
+// ============================================
+
+function getCareerWins() {
+    return getCareerRaceResults()
+        .filter(result => result.position === 1);
+}
+
+
+function getCareerPodiums() {
+    return getCareerRaceResults()
+        .filter(result => {
+            return (
+                result.position &&
+                result.position <= 3
+            );
+        });
+}
+
+
+function getCareerTop10s() {
+    return getCareerRaceResults()
+        .filter(result => {
+            return (
+                result.position &&
+                result.position <= 10
+            );
+        });
+}
+
+
+function getCareerRaceDays() {
+    return careerHistoryState.raceResults.length;
+}
+
+
+function getBestCareerResult() {
+    const results = getCareerRaceResults()
+        .filter(result => {
+            return Number.isFinite(
+                Number(result.position)
+            );
+        });
+
+    if (results.length === 0) {
+        return null;
+    }
+
+    return [...results]
+        .sort(
+            (a, b) =>
+                Number(a.position) -
+                Number(b.position)
+        )[0];
+}
+
+
+// ============================================
+// HISTORY — SEASONS
+// ============================================
+
+function createSeasonHistory(
+    year
+) {
+    return {
+        year,
+
+        raceDays: 0,
+        wins: 0,
+        podiums: 0,
+        top10s: 0,
+
+        bestResult: null,
+
+        races: [],
+
+        achievements: [],
+
+        development: {},
+
+        completed: false
+    };
+}
+
+
+function getSeasonHistory(year) {
+    return careerHistoryState.seasons.find(
+        season => season.year === year
+    ) || null;
+}
+
+
+function getOrCreateSeasonHistory(
+    year
+) {
+    let season =
+        getSeasonHistory(year);
+
+    if (!season) {
+        season = createSeasonHistory(year);
+
+        careerHistoryState.seasons.push(
+            season
+        );
+    }
+
+    return season;
+}
+
+
+function addRaceResultToSeason(
+    result
+) {
+    if (!result) {
+        return false;
+    }
+
+    const date =
+        result.date ||
+        getCalendarCurrentDate();
+
+    const year =
+        Number(String(date).slice(0, 4));
+
+    if (!year) {
+        return false;
+    }
+
+    const season =
+        getOrCreateSeasonHistory(year);
+
+    season.races.push(
+        result.raceId
+    );
+
+    season.raceDays =
+        season.races.length;
+
+    if (result.position === 1) {
+        season.wins++;
+    }
+
+    if (
+        result.position &&
+        result.position <= 3
+    ) {
+        season.podiums++;
+    }
+
+    if (
+        result.position &&
+        result.position <= 10
+    ) {
+        season.top10s++;
+    }
+
+    if (
+        result.position &&
+        (
+            !season.bestResult ||
+            result.position <
+                season.bestResult.position
+        )
+    ) {
+        season.bestResult = {
+            raceId: result.raceId,
+            raceName: result.raceName,
+            position: result.position
+        };
+    }
+
+    return true;
+}
+
+
+// ============================================
+// HISTORY — ACHIEVEMENTS
+// ============================================
+
+function createCareerAchievement(
+    type,
+    title,
+    description,
+    data = {}
+) {
+    return {
+        id:
+            `achievement_${Date.now()}_${Math.random()}`,
+
+        type,
+
+        title,
+
+        description,
+
+        date: getCalendarCurrentDate(),
+
+        data
+    };
+}
+
+
+function addCareerAchievement(
+    achievement
+) {
+    if (!achievement) {
+        return false;
+    }
+
+    careerHistoryState.achievements.push(
+        achievement
+    );
+
+    addHistoryEntry({
+        type: "achievement",
+
+        title:
+            achievement.title,
+
+        description:
+            achievement.description,
+
+        date:
+            achievement.date,
+
+        data:
+            achievement.data
+    });
+
+    return true;
+}
+
+
+function getCareerAchievements() {
+    return [
+        ...careerHistoryState.achievements
+    ];
+}
+
+
+// ============================================
+// HISTORY — MAJOR MOMENTS
+// ============================================
+
+function addCareerMajorMoment(
+    title,
+    description,
+    data = {}
+) {
+    const moment = {
+        id:
+            `moment_${Date.now()}_${Math.random()}`,
+
+        title,
+
+        description,
+
+        date: getCalendarCurrentDate(),
+
+        data
+    };
+
+    careerHistoryState.majorMoments.push(
+        moment
+    );
+
+    addHistoryEntry({
+        type: "major_moment",
+
+        title,
+
+        description,
+
+        date: moment.date,
+
+        data
+    });
+
+    return moment;
+}
+
+
+function getCareerMajorMoments() {
+    return [
+        ...careerHistoryState.majorMoments
+    ].sort((a, b) => {
+        return (
+            new Date(b.date) -
+            new Date(a.date)
+        );
+    });
+}
+
+
+// ============================================
+// HISTORY — CAREER RECORDS
+// ============================================
+
+function getCareerRecords() {
+    const results =
+        getCareerRaceResults();
+
+    const bestResult =
+        getBestCareerResult();
+
+    return {
+        raceDays:
+            results.length,
+
+        wins:
+            getCareerWins().length,
+
+        podiums:
+            getCareerPodiums().length,
+
+        top10s:
+            getCareerTop10s().length,
+
+        bestResult: bestResult
+            ? {
+                position:
+                    bestResult.position,
+
+                raceName:
+                    bestResult.raceName,
+
+                raceId:
+                    bestResult.raceId
+            }
+            : null,
+
+        seasons:
+            careerHistoryState.seasons.length,
+
+        achievements:
+            careerHistoryState.achievements.length,
+
+        majorMoments:
+            careerHistoryState.majorMoments.length
+    };
+}
+
+
+// ============================================
+// HISTORY — SEASON REVIEW
+// ============================================
+
+function createSeasonReview(
+    year
+) {
+    const season =
+        getSeasonHistory(year);
+
+    if (!season) {
+        return null;
+    }
+
+    return {
+        year: season.year,
+
+        raceDays:
+            season.raceDays,
+
+        wins:
+            season.wins,
+
+        podiums:
+            season.podiums,
+
+        top10s:
+            season.top10s,
+
+        bestResult:
+            season.bestResult,
+
+        races:
+            [...season.races],
+
+        achievements:
+            [...season.achievements],
+
+        development:
+            {
+                ...season.development
+            }
+    };
+}
+
+
+function completeSeason(
+    year
+) {
+    const season =
+        getOrCreateSeasonHistory(year);
+
+    season.completed = true;
+
+    careerHistoryState.currentSeason =
+        year + 1;
+
+    addHistoryEntry({
+        type: "season",
+
+        title:
+            `${year} Season Completed`,
+
+        description:
+            `The ${year} season has been completed.`,
+
+        date:
+            getCalendarCurrentDate(),
+
+        data:
+            createSeasonReview(year)
+    });
+
+    return season;
+}
+
+
+// ============================================
+// HISTORY — PLAYER DEVELOPMENT
+// ============================================
+
+function saveSeasonDevelopment(
+    year,
+    development
+) {
+    const season =
+        getOrCreateSeasonHistory(year);
+
+    season.development = {
+        ...development
+    };
+
+    return true;
+}
+
+
+// ============================================
+// HISTORY — INITIALIZATION
+// ============================================
+
+function initializeCareerHistory() {
+    careerHistoryState.initialized = true;
+
+    const currentYear =
+        Number(
+            String(
+                getCalendarCurrentDate()
+            ).slice(0, 4)
+        );
+
+    careerHistoryState.currentSeason =
+        currentYear;
+
+    getOrCreateSeasonHistory(
+        currentYear
+    );
+
+    return true;
+}
+
+
+// ============================================
+// HISTORY — SUMMARY
+// ============================================
+
+function getCareerHistorySummary() {
+    return {
+        initialized:
+            careerHistoryState.initialized,
+
+        currentSeason:
+            careerHistoryState.currentSeason,
+
+        records:
+            getCareerRecords(),
+
+        recentResults:
+            getCareerRaceResults()
+                .slice(0, 5),
+
+        seasons:
+            [...careerHistoryState.seasons],
+
+        achievements:
+            getCareerAchievements(),
+
+        majorMoments:
+            getCareerMajorMoments()
+    };
+}
+
+
+// ============================================
+// HISTORY — RESET
+// ============================================
+
+function resetCareerHistory() {
+    careerHistoryState.initialized = false;
+
+    careerHistoryState.raceResults = [];
+
+    careerHistoryState.seasons = [];
+
+    careerHistoryState.achievements = [];
+
+    careerHistoryState.majorMoments = [];
+
+    careerHistoryState.currentSeason = null;
+}
+
+
+// ============================================
+// HISTORY — AUTO INITIALIZE
+// ============================================
+
+initializeCareerHistory();
+// ============================================
+// CYCLING CAREER
+// script.js — Del 31
+// Save & Load System
+// ============================================
+
+const saveState = {
+    initialized: false,
+
+    saveKey: "cyclingCareer_save",
+
+    lastSavedAt: null,
+
+    lastLoadedAt: null,
+
+    hasSave: false,
+
+    autoSaveEnabled: true
+};
+
+
+// ============================================
+// SAVE — STATE CREATION
+// ============================================
+
+function createSaveState() {
+    return {
+        version: game.version,
+
+        saveVersion: game.saveVersion,
+
+        savedAt: new Date().toISOString(),
+
+        game: {
+            currentScreen:
+                game.currentScreen,
+
+            gameStarted:
+                game.gameStarted,
+
+            career:
+                {
+                    ...game.career
+                },
+
+            player:
+                game.player,
+
+            team:
+                game.team,
+
+            contract:
+                game.contract,
+
+            agent:
+                game.agent,
+
+            currentRace:
+                game.currentRace,
+
+            world:
+                game.world,
+
+            inbox:
+                game.inbox,
+
+            history:
+                game.history,
+
+            relationships:
+                game.relationships
+        },
+
+        systems: {
+            riderCreation:
+                typeof riderCreation !== "undefined"
+                    ? riderCreation
+                    : null,
+
+            teamOfferState:
+                typeof teamOfferState !== "undefined"
+                    ? teamOfferState
+                    : null,
+
+            careerTime:
+                typeof careerTime !== "undefined"
+                    ? careerTime
+                    : null,
+
+            careerEvents:
+                typeof careerEvents !== "undefined"
+                    ? careerEvents
+                    : null,
+
+            inboxState:
+                typeof inboxState !== "undefined"
+                    ? inboxState
+                    : null,
+
+            relationshipState:
+                typeof relationshipState !== "undefined"
+                    ? relationshipState
+                    : null,
+
+            teamStructure:
+                typeof teamStructure !== "undefined"
+                    ? teamStructure
+                    : null,
+
+            trainingState:
+                typeof trainingState !== "undefined"
+                    ? trainingState
+                    : null,
+
+            recoveryState:
+                typeof recoveryState !== "undefined"
+                    ? recoveryState
+                    : null,
+
+            racePreparationState:
+                typeof racePreparationState !== "undefined"
+                    ? racePreparationState
+                    : null,
+
+            raceState:
+                typeof raceState !== "undefined"
+                    ? raceState
+                    : null,
+
+            raceSimulationState:
+                typeof raceSimulationState !== "undefined"
+                    ? raceSimulationState
+                    : null,
+
+            raceActionState:
+                typeof raceActionState !== "undefined"
+                    ? raceActionState
+                    : null,
+
+            raceResolutionState:
+                typeof raceResolutionState !== "undefined"
+                    ? raceResolutionState
+                    : null,
+
+            raceWorldState:
+                typeof raceWorldState !== "undefined"
+                    ? raceWorldState
+                    : null,
+
+            raceInteractionState:
+                typeof raceInteractionState !== "undefined"
+                    ? raceInteractionState
+                    : null,
+
+            raceSyncState:
+                typeof raceSyncState !== "undefined"
+                    ? raceSyncState
+                    : null,
+
+            raceProgressionState:
+                typeof raceProgressionState !== "undefined"
+                    ? raceProgressionState
+                    : null,
+
+            raceSituationGeneratorState:
+                typeof raceSituationGeneratorState !== "undefined"
+                    ? raceSituationGeneratorState
+                    : null,
+
+            raceControllerState:
+                typeof raceControllerState !== "undefined"
+                    ? raceControllerState
+                    : null,
+
+            raceResultsState:
+                typeof raceResultsState !== "undefined"
+                    ? raceResultsState
+                    : null,
+
+            stageRaceState:
+                typeof stageRaceState !== "undefined"
+                    ? stageRaceState
+                    : null,
+
+            calendarState:
+                typeof calendarState !== "undefined"
+                    ? calendarState
+                    : null,
+
+            careerHistoryState:
+                typeof careerHistoryState !== "undefined"
+                    ? careerHistoryState
+                    : null
+        }
+    };
+}
+
+
+// ============================================
+// SAVE — WRITE
+// ============================================
+
+function saveCareer() {
+    try {
+        const saveData =
+            createSaveState();
+
+        const serialized =
+            JSON.stringify(saveData);
+
+        localStorage.setItem(
+            saveState.saveKey,
+            serialized
+        );
+
+        saveState.lastSavedAt =
+            saveData.savedAt;
+
+        saveState.hasSave = true;
+
+        console.log(
+            "Career saved successfully."
+        );
+
+        return true;
+
+    } catch (error) {
+
+        console.error(
+            "Failed to save career:",
+            error
+        );
+
+        return false;
+    }
+}
+
+
+// ============================================
+// SAVE — CHECK
+// ============================================
+
+function hasSavedCareer() {
+    try {
+        return Boolean(
+            localStorage.getItem(
+                saveState.saveKey
+            )
+        );
+
+    } catch (error) {
+
+        console.error(
+            "Could not check save:",
+            error
+        );
+
+        return false;
+    }
+}
+
+
+// ============================================
+// SAVE — READ
+// ============================================
+
+function getSavedCareer() {
+    try {
+        const serialized =
+            localStorage.getItem(
+                saveState.saveKey
+            );
+
+        if (!serialized) {
+            return null;
+        }
+
+        return JSON.parse(
+            serialized
+        );
+
+    } catch (error) {
+
+        console.error(
+            "Could not read save:",
+            error
+        );
+
+        return null;
+    }
+}
+
+
+// ============================================
+// SAVE — VALIDATION
+// ============================================
+
+function validateSaveData(
+    saveData
+) {
+    if (!saveData) {
+        return false;
+    }
+
+    if (
+        typeof saveData !== "object"
+    ) {
+        return false;
+    }
+
+    if (!saveData.game) {
+        return false;
+    }
+
+    if (!saveData.game.career) {
+        return false;
+    }
+
+    if (
+        typeof saveData.saveVersion !==
+        "number"
+    ) {
+        return false;
+    }
+
+    return true;
+}
+
+
+// ============================================
+// LOAD — GAME STATE
+// ============================================
+
+function loadGameState(
+    saveData
+) {
+    if (
+        !validateSaveData(
+            saveData
+        )
+    ) {
+        console.error(
+            "Invalid save data."
+        );
+
+        return false;
+    }
+
+    const savedGame =
+        saveData.game;
+
+    game.currentScreen =
+        savedGame.currentScreen ||
+        "dashboard";
+
+    game.gameStarted =
+        Boolean(
+            savedGame.gameStarted
+        );
+
+    game.career =
+        savedGame.career ||
+        game.career;
+
+    game.player =
+        savedGame.player ||
+        null;
+
+    game.team =
+        savedGame.team ||
+        null;
+
+    game.contract =
+        savedGame.contract ||
+        null;
+
+    game.agent =
+        savedGame.agent ||
+        null;
+
+    game.currentRace =
+        savedGame.currentRace ||
+        null;
+
+    game.world =
+        savedGame.world ||
+        game.world;
+
+    game.inbox =
+        savedGame.inbox ||
+        [];
+
+    game.history =
+        savedGame.history ||
+        [];
+
+    game.relationships =
+        savedGame.relationships ||
+        [];
+
+    return true;
+}
+
+
+// ============================================
+// LOAD — SYSTEM STATES
+// ============================================
+
+function restoreSystemStates(
+    systems
+) {
+    if (!systems) {
+        return;
+    }
+
+    if (
+        systems.riderCreation &&
+        typeof riderCreation !== "undefined"
+    ) {
+        Object.assign(
+            riderCreation,
+            systems.riderCreation
+        );
+    }
+
+    if (
+        systems.teamOfferState &&
+        typeof teamOfferState !== "undefined"
+    ) {
+        Object.assign(
+            teamOfferState,
+            systems.teamOfferState
+        );
+    }
+
+    if (
+        systems.careerTime &&
+        typeof careerTime !== "undefined"
+    ) {
+        Object.assign(
+            careerTime,
+            systems.careerTime
+        );
+    }
+
+    if (
+        systems.careerEvents &&
+        typeof careerEvents !== "undefined"
+    ) {
+        Object.assign(
+            careerEvents,
+            systems.careerEvents
+        );
+    }
+
+    if (
+        systems.inboxState &&
+        typeof inboxState !== "undefined"
+    ) {
+        Object.assign(
+            inboxState,
+            systems.inboxState
+        );
+    }
+
+    if (
+        systems.relationshipState &&
+        typeof relationshipState !== "undefined"
+    ) {
+        Object.assign(
+            relationshipState,
+            systems.relationshipState
+        );
+    }
+
+    if (
+        systems.teamStructure &&
+        typeof teamStructure !== "undefined"
+    ) {
+        Object.assign(
+            teamStructure,
+            systems.teamStructure
+        );
+    }
+
+    if (
+        systems.trainingState &&
+        typeof trainingState !== "undefined"
+    ) {
+        Object.assign(
+            trainingState,
+            systems.trainingState
+        );
+    }
+
+    if (
+        systems.recoveryState &&
+        typeof recoveryState !== "undefined"
+    ) {
+        Object.assign(
+            recoveryState,
+            systems.recoveryState
+        );
+    }
+
+    if (
+        systems.racePreparationState &&
+        typeof racePreparationState !== "undefined"
+    ) {
+        Object.assign(
+            racePreparationState,
+            systems.racePreparationState
+        );
+    }
+
+    if (
+        systems.raceState &&
+        typeof raceState !== "undefined"
+    ) {
+        Object.assign(
+            raceState,
+            systems.raceState
+        );
+    }
+
+    if (
+        systems.raceSimulationState &&
+        typeof raceSimulationState !== "undefined"
+    ) {
+        Object.assign(
+            raceSimulationState,
+            systems.raceSimulationState
+        );
+    }
+
+    if (
+        systems.raceActionState &&
+        typeof raceActionState !== "undefined"
+    ) {
+        Object.assign(
+            raceActionState,
+            systems.raceActionState
+        );
+    }
+
+    if (
+        systems.raceResolutionState &&
+        typeof raceResolutionState !== "undefined"
+    ) {
+        Object.assign(
+            raceResolutionState,
+            systems.raceResolutionState
+        );
+    }
+
+    if (
+        systems.raceWorldState &&
+        typeof raceWorldState !== "undefined"
+    ) {
+        Object.assign(
+            raceWorldState,
+            systems.raceWorldState
+        );
+    }
+
+    if (
+        systems.raceInteractionState &&
+        typeof raceInteractionState !== "undefined"
+    ) {
+        Object.assign(
+            raceInteractionState,
+            systems.raceInteractionState
+        );
+    }
+
+    if (
+        systems.raceSyncState &&
+        typeof raceSyncState !== "undefined"
+    ) {
+        Object.assign(
+            raceSyncState,
+            systems.raceSyncState
+        );
+    }
+
+    if (
+        systems.raceProgressionState &&
+        typeof raceProgressionState !== "undefined"
+    ) {
+        Object.assign(
+            raceProgressionState,
+            systems.raceProgressionState
+        );
+    }
+
+    if (
+        systems.raceSituationGeneratorState &&
+        typeof raceSituationGeneratorState !== "undefined"
+    ) {
+        Object.assign(
+            raceSituationGeneratorState,
+            systems.raceSituationGeneratorState
+        );
+    }
+
+    if (
+        systems.raceControllerState &&
+        typeof raceControllerState !== "undefined"
+    ) {
+        Object.assign(
+            raceControllerState,
+            systems.raceControllerState
+        );
+    }
+
+    if (
+        systems.raceResultsState &&
+        typeof raceResultsState !== "undefined"
+    ) {
+        Object.assign(
+            raceResultsState,
+            systems.raceResultsState
+        );
+    }
+
+    if (
+        systems.stageRaceState &&
+        typeof stageRaceState !== "undefined"
+    ) {
+        Object.assign(
+            stageRaceState,
+            systems.stageRaceState
+        );
+    }
+
+    if (
+        systems.calendarState &&
+        typeof calendarState !== "undefined"
+    ) {
+        Object.assign(
+            calendarState,
+            systems.calendarState
+        );
+    }
+
+    if (
+        systems.careerHistoryState &&
+        typeof careerHistoryState !== "undefined"
+    ) {
+        Object.assign(
+            careerHistoryState,
+            systems.careerHistoryState
+        );
+    }
+}
+
+
+// ============================================
+// LOAD — CAREER
+// ============================================
+
+function loadCareer() {
+    try {
+        const saveData =
+            getSavedCareer();
+
+        if (!saveData) {
+            console.log(
+                "No saved career found."
+            );
+
+            return false;
+        }
+
+        if (
+            !loadGameState(
+                saveData
+            )
+        ) {
+            return false;
+        }
+
+        restoreSystemStates(
+            saveData.systems
+        );
+
+        saveState.lastLoadedAt =
+            new Date().toISOString();
+
+        saveState.hasSave = true;
+
+        console.log(
+            "Career loaded successfully."
+        );
+
+        render();
+
+        return true;
+
+    } catch (error) {
+
+        console.error(
+            "Failed to load career:",
+            error
+        );
+
+        return false;
+    }
+}
+
+
+// ============================================
+// SAVE — DELETE
+// ============================================
+
+function deleteSavedCareer() {
+    try {
+        localStorage.removeItem(
+            saveState.saveKey
+        );
+
+        saveState.hasSave = false;
+        saveState.lastSavedAt = null;
+
+        console.log(
+            "Saved career deleted."
+        );
+
+        return true;
+
+    } catch (error) {
+
+        console.error(
+            "Failed to delete save:",
+            error
+        );
+
+        return false;
+    }
+}
+
+
+// ============================================
+// SAVE — AUTOSAVE
+// ============================================
+
+function setAutoSaveEnabled(
+    enabled
+) {
+    saveState.autoSaveEnabled =
+        Boolean(enabled);
+
+    return saveState.autoSaveEnabled;
+}
+
+
+function isAutoSaveEnabled() {
+    return saveState.autoSaveEnabled;
+}
+
+
+function autoSaveCareer() {
+    if (
+        !saveState.autoSaveEnabled
+    ) {
+        return false;
+    }
+
+    if (!game.gameStarted) {
+        return false;
+    }
+
+    return saveCareer();
+}
+
+
+// ============================================
+// SAVE — IMPORTANT EVENT HOOK
+// ============================================
+
+function saveAfterMajorEvent(
+    eventType = "major_event"
+) {
+    if (
+        !saveState.autoSaveEnabled
+    ) {
+        return false;
+    }
+
+    console.log(
+        `Autosaving after ${eventType}...`
+    );
+
+    return saveCareer();
+}
+
+
+// ============================================
+// SAVE — SUMMARY
+// ============================================
+
+function getSaveStateSummary() {
+    return {
+        initialized:
+            saveState.initialized,
+
+        hasSave:
+            hasSavedCareer(),
+
+        lastSavedAt:
+            saveState.lastSavedAt,
+
+        lastLoadedAt:
+            saveState.lastLoadedAt,
+
+        autoSaveEnabled:
+            saveState.autoSaveEnabled,
+
+        saveKey:
+            saveState.saveKey
+    };
+}
+
+
+// ============================================
+// SAVE — INITIALIZATION
+// ============================================
+
+function initializeSaveSystem() {
+    saveState.initialized = true;
+
+    saveState.hasSave =
+        hasSavedCareer();
+
+    console.log(
+        "Save system initialized."
+    );
+
+    return true;
+}
+
+
+// ============================================
+// SAVE — AUTO INITIALIZE
+// ============================================
+
+initializeSaveSystem();
+// ============================================
+// CYCLING CAREER
+// script.js — Del 32
+// World Simulation & Season Progression
+// ============================================
+
+const worldProgressionState = {
+    initialized: false,
+
+    lastSimulationDate: null,
+
+    simulatedDays: 0,
+
+    simulatedRaces: 0,
+
+    seasonChanges: 0,
+
+    worldEvents: []
+};
+
+
+// ============================================
+// WORLD — DATE
+// ============================================
+
+function getWorldCurrentDate() {
+    if (typeof getCurrentDate === "function") {
+        return getCurrentDate();
+    }
+
+    return game.career.currentDate;
+}
+
+
+function getWorldYear() {
+    const date = getWorldCurrentDate();
+
+    return Number(
+        String(date).slice(0, 4)
+    );
+}
+
+
+// ============================================
+// WORLD — RIDERS
+// ============================================
+
+function getWorldRiders() {
+    if (
+        typeof raceWorldState !== "undefined" &&
+        Array.isArray(
+            raceWorldState.activeRiders
+        )
+    ) {
+        return raceWorldState.activeRiders;
+    }
+
+    if (
+        game.world &&
+        Array.isArray(game.world.riders)
+    ) {
+        return game.world.riders;
+    }
+
+    return [];
+}
+
+
+function getWorldRiderById(riderId) {
+    return getWorldRiders().find(
+        rider => rider.id === riderId
+    ) || null;
+}
+
+
+// ============================================
+// WORLD — BASIC DEVELOPMENT
+// ============================================
+
+function getWorldDevelopmentChance(
+    rider
+) {
+    if (!rider) {
+        return 0;
+    }
+
+    const age =
+        Number(rider.age) || 25;
+
+    let chance = 0.5;
+
+    if (age < 21) {
+        chance += 0.8;
+    } else if (age < 25) {
+        chance += 0.4;
+    } else if (age < 29) {
+        chance += 0.1;
+    } else if (age > 32) {
+        chance -= 0.3;
+    } else if (age > 35) {
+        chance -= 0.7;
+    }
+
+    return Math.max(
+        0.05,
+        chance
+    );
+}
+
+
+function simulateWorldRiderDevelopment(
+    rider
+) {
+    if (!rider) {
+        return false;
+    }
+
+    if (!rider.stats) {
+        return false;
+    }
+
+    const chance =
+        getWorldDevelopmentChance(
+            rider
+        );
+
+    if (Math.random() > chance) {
+        return false;
+    }
+
+    const statKeys =
+        Object.keys(
+            rider.stats
+        );
+
+    if (statKeys.length === 0) {
+        return false;
+    }
+
+    const statKey =
+        statKeys[
+            Math.floor(
+                Math.random() *
+                statKeys.length
+            )
+        ];
+
+    const current =
+        Number(
+            rider.stats[statKey]
+        ) || 0;
+
+    const change =
+        Math.random() < 0.75
+            ? 1
+            : -1;
+
+    rider.stats[statKey] =
+        Math.max(
+            1,
+            Math.min(
+                100,
+                current + change
+            )
+        );
+
+    return true;
+}
+
+
+// ============================================
+// WORLD — AGE
+// ============================================
+
+function updateWorldRiderAge(
+    rider,
+    daysPassed
+) {
+    if (!rider) {
+        return false;
+    }
+
+    if (
+        typeof rider.age !== "number"
+    ) {
+        return false;
+    }
+
+    const currentAge =
+        rider.age;
+
+    const currentDate =
+        getWorldCurrentDate();
+
+    const birthDate =
+        rider.birthDate || null;
+
+    if (birthDate) {
+        const birth =
+            new Date(
+                `${birthDate}T00:00:00`
+            );
+
+        const current =
+            new Date(
+                `${currentDate}T00:00:00`
+            );
+
+        if (
+            !Number.isNaN(
+                birth.getTime()
+            ) &&
+            !Number.isNaN(
+                current.getTime()
+            )
+        ) {
+            let age =
+                current.getFullYear() -
+                birth.getFullYear();
+
+            const birthdayPassed =
+                (
+                    current.getMonth() >
+                        birth.getMonth()
+                ) ||
+                (
+                    current.getMonth() ===
+                        birth.getMonth() &&
+                    current.getDate() >=
+                        birth.getDate()
+                );
+
+            if (!birthdayPassed) {
+                age--;
+            }
+
+            rider.age = age;
+
+            return true;
+        }
+    }
+
+    return false;
+}
+
+
+// ============================================
+// WORLD — RETIREMENT
+// ============================================
+
+function shouldWorldRiderRetire(
+    rider
+) {
+    if (!rider) {
+        return false;
+    }
+
+    const age =
+        Number(rider.age) || 0;
+
+    if (age < 34) {
+        return false;
+    }
+
+    let chance = 0;
+
+    if (age >= 34) {
+        chance = 0.01;
+    }
+
+    if (age >= 36) {
+        chance = 0.03;
+    }
+
+    if (age >= 38) {
+        chance = 0.08;
+    }
+
+    if (age >= 40) {
+        chance = 0.18;
+    }
+
+    if (age >= 42) {
+        chance = 0.35;
+    }
+
+    return Math.random() < chance;
+}
+
+
+function retireWorldRider(
+    rider
+) {
+    if (!rider) {
+        return false;
+    }
+
+    rider.retired = true;
+
+    rider.status =
+        "retired";
+
+    rider.retirementDate =
+        getWorldCurrentDate();
+
+    return true;
+}
+
+
+// ============================================
+// WORLD — RACE SIMULATION
+// ============================================
+
+function simulateWorldRace(
+    race
+) {
+    if (!race) {
+        return null;
+    }
+
+    worldProgressionState.simulatedRaces++;
+
+    const result = {
+        raceId: race.id,
+
+        raceName: race.name,
+
+        date:
+            race.startDate ||
+            getWorldCurrentDate(),
+
+        winner: null,
+
+        podium: [],
+
+        top10: []
+    };
+
+    const riders =
+        getWorldRiders()
+            .filter(rider => {
+                return (
+                    rider &&
+                    !rider.retired
+                );
+            });
+
+    if (riders.length === 0) {
+        return result;
+    }
+
+    const ranked =
+        [...riders]
+            .sort(() => {
+                return Math.random() - 0.5;
+            });
+
+    result.top10 =
+        ranked
+            .slice(0, 10)
+            .map(rider => rider.id);
+
+    result.podium =
+        ranked
+            .slice(0, 3)
+            .map(rider => rider.id);
+
+    result.winner =
+        result.podium[0] || null;
+
+    return result;
+}
+
+
+// ============================================
+// WORLD — RACE RESULTS
+// ============================================
+
+function applyWorldRaceResult(
+    raceResult
+) {
+    if (!raceResult) {
+        return false;
+    }
+
+    const riders =
+        getWorldRiders();
+
+    raceResult.top10.forEach(
+        (riderId, index) => {
+            const rider =
+                riders.find(
+                    item =>
+                        item.id ===
+                        riderId
+                );
+
+            if (!rider) {
+                return;
+            }
+
+            rider.lastRacePosition =
+                index + 1;
+
+            rider.lastRaceId =
+                raceResult.raceId;
+
+            rider.lastRaceDate =
+                raceResult.date;
+
+            if (
+                index === 0
+            ) {
+                rider.wins =
+                    (
+                        Number(rider.wins) ||
+                        0
+                    ) + 1;
+            }
+
+            if (
+                index < 3
+            ) {
+                rider.podiums =
+                    (
+                        Number(
+                            rider.podiums
+                        ) || 0
+                    ) + 1;
+            }
+        }
+    );
+
+    return true;
+}
+
+
+// ============================================
+// WORLD — EVENTS
+// ============================================
+
+function addWorldProgressionEvent(
+    type,
+    title,
+    description,
+    data = {}
+) {
+    const event = {
+        id:
+            `world_event_${Date.now()}_${Math.random()}`,
+
+        type,
+
+        title,
+
+        description,
+
+        date:
+            getWorldCurrentDate(),
+
+        data
+    };
+
+    worldProgressionState.worldEvents.push(
+        event
+    );
+
+    if (
+        !game.world.worldEvents
+    ) {
+        game.world.worldEvents = [];
+    }
+
+    game.world.worldEvents.push(
+        event
+    );
+
+    return event;
+}
+
+
+function getWorldProgressionEvents(
+    limit = 20
+) {
+    return [
+        ...worldProgressionState.worldEvents
+    ]
+        .sort((a, b) => {
+            return (
+                new Date(b.date) -
+                new Date(a.date)
+            );
+        })
+        .slice(0, limit);
+}
+
+
+// ============================================
+// WORLD — SIMULATE DAY
+// ============================================
+
+function simulateWorldDay() {
+    const riders =
+        getWorldRiders();
+
+    riders.forEach(rider => {
+        if (!rider || rider.retired) {
+            return;
+        }
+
+        simulateWorldRiderDevelopment(
+            rider
+        );
+
+        updateWorldRiderAge(
+            rider,
+            1
+        );
+
+        if (
+            shouldWorldRiderRetire(
+                rider
+            )
+        ) {
+            retireWorldRider(
+                rider
+            );
+
+            addWorldProgressionEvent(
+                "retirement",
+                "Rider Retirement",
+                `${rider.name || "A rider"} retired from professional cycling.`,
+                {
+                    riderId: rider.id
+                }
+            );
+        }
+    });
+
+    worldProgressionState.simulatedDays++;
+
+    worldProgressionState.lastSimulationDate =
+        getWorldCurrentDate();
+}
+
+
+// ============================================
+// WORLD — SIMULATE RACE CALENDAR
+// ============================================
+
+function simulateWorldRacesBetween(
+    startDate,
+    endDate
+) {
+    if (
+        typeof getCalendarRacesBetween !==
+        "function"
+    ) {
+        return [];
+    }
+
+    const races =
+        getCalendarRacesBetween(
+            startDate,
+            endDate
+        );
+
+    const results = [];
+
+    races.forEach(race => {
+        if (!race) {
+            return;
+        }
+
+        const result =
+            simulateWorldRace(
+                race
+            );
+
+        applyWorldRaceResult(
+            result
+        );
+
+        results.push(result);
+    });
+
+    return results;
+}
+
+
+// ============================================
+// WORLD — ADVANCE
+// ============================================
+
+function advanceWorldSimulation(
+    daysPassed
+) {
+    if (
+        !Number.isFinite(daysPassed) ||
+        daysPassed <= 0
+    ) {
+        return {
+            days: 0,
+            races: 0,
+            events: []
+        };
+    }
+
+    const startDate =
+        getWorldCurrentDate();
+
+    for (
+        let day = 0;
+        day < daysPassed;
+        day++
+    ) {
+        simulateWorldDay();
+    }
+
+    const endDate =
+        getWorldCurrentDate();
+
+    const raceResults =
+        simulateWorldRacesBetween(
+            startDate,
+            endDate
+        );
+
+    return {
+        days:
+            daysPassed,
+
+        races:
+            raceResults.length,
+
+        raceResults,
+
+        events:
+            getWorldProgressionEvents()
+    };
+}
+
+
+// ============================================
+// SEASON — DETECTION
+// ============================================
+
+function isNewSeason(
+    previousDate,
+    currentDate
+) {
+    if (
+        !previousDate ||
+        !currentDate
+    ) {
+        return false;
+    }
+
+    const previousYear =
+        Number(
+            String(
+                previousDate
+            ).slice(0, 4)
+        );
+
+    const currentYear =
+        Number(
+            String(
+                currentDate
+            ).slice(0, 4)
+        );
+
+    return currentYear >
+        previousYear;
+}
+
+
+// ============================================
+// SEASON — START
+// ============================================
+
+function initializeNewSeason(
+    year
+) {
+    if (
+        typeof getOrCreateSeasonHistory ===
+        "function"
+    ) {
+        getOrCreateSeasonHistory(
+            year
+        );
+    }
+
+    if (
+        typeof careerHistoryState !==
+            "undefined"
+    ) {
+        careerHistoryState.currentSeason =
+            year;
+    }
+
+    if (
+        typeof game.career !==
+            "undefined"
+    ) {
+        game.career.season =
+            year;
+    }
+
+    if (
+        typeof game.world !==
+            "undefined"
+    ) {
+        game.world.year =
+            year;
+    }
+
+    worldProgressionState.seasonChanges++;
+
+    addWorldProgressionEvent(
+        "season_start",
+        `Season ${year}`,
+        `The ${year} cycling season has begun.`,
+        {
+            year
+        }
+    );
+
+    if (
+        typeof addCareerMajorMoment ===
+        "function"
+    ) {
+        addCareerMajorMoment(
+            `Season ${year}`,
+            `A new cycling season has begun.`,
+            {
+                year
+            }
+        );
+    }
+
+    return true;
+}
+
+
+// ============================================
+// SEASON — END
+// ============================================
+
+function completePreviousSeason(
+    year
+) {
+    if (
+        typeof completeSeason ===
+        "function"
+    ) {
+        completeSeason(
+            year
+        );
+    }
+
+    addWorldProgressionEvent(
+        "season_end",
+        `Season ${year} completed`,
+        `The ${year} cycling season has ended.`,
+        {
+            year
+        }
+    );
+
+    return true;
+}
+
+
+// ============================================
+// SEASON — PROCESS CHANGE
+// ============================================
+
+function processSeasonChange(
+    previousDate,
+    currentDate
+) {
+    if (
+        !isNewSeason(
+            previousDate,
+            currentDate
+        )
+    ) {
+        return false;
+    }
+
+    const previousYear =
+        Number(
+            String(
+                previousDate
+            ).slice(0, 4)
+        );
+
+    const currentYear =
+        Number(
+            String(
+                currentDate
+            ).slice(0, 4)
+        );
+
+    completePreviousSeason(
+        previousYear
+    );
+
+    initializeNewSeason(
+        currentYear
+    );
+
+    return true;
+}
+
+
+// ============================================
+// WORLD — FULL PROGRESSION
+// ============================================
+
+function processWorldProgression(
+    previousDate,
+    currentDate
+) {
+    if (
+        !previousDate ||
+        !currentDate
+    ) {
+        return null;
+    }
+
+    const previous =
+        new Date(
+            `${previousDate}T00:00:00`
+        );
+
+    const current =
+        new Date(
+            `${currentDate}T00:00:00`
+        );
+
+    if (
+        Number.isNaN(
+            previous.getTime()
+        ) ||
+        Number.isNaN(
+            current.getTime()
+        )
+    ) {
+        return null;
+    }
+
+    const difference =
+        Math.floor(
+            (
+                current.getTime() -
+                previous.getTime()
+            ) /
+            (
+                1000 *
+                60 *
+                60 *
+                24
+            )
+        );
+
+    if (difference <= 0) {
+        return {
+            days: 0,
+            races: 0,
+            seasonChanged: false
+        };
+    }
+
+    const previousGameDate =
+        game.career.currentDate;
+
+    game.career.currentDate =
+        currentDate;
+
+    const result =
+        advanceWorldSimulation(
+            difference
+        );
+
+    const seasonChanged =
+        processSeasonChange(
+            previousGameDate,
+            currentDate
+        );
+
+    return {
+        ...result,
+
+        seasonChanged
+    };
+}
+
+
+// ============================================
+// WORLD — SUMMARY
+// ============================================
+
+function getWorldProgressionSummary() {
+    return {
+        initialized:
+            worldProgressionState.initialized,
+
+        lastSimulationDate:
+            worldProgressionState.lastSimulationDate,
+
+        simulatedDays:
+            worldProgressionState.simulatedDays,
+
+        simulatedRaces:
+            worldProgressionState.simulatedRaces,
+
+        seasonChanges:
+            worldProgressionState.seasonChanges,
+
+        currentYear:
+            getWorldYear(),
+
+        recentEvents:
+            getWorldProgressionEvents(10)
+    };
+}
+
+
+// ============================================
+// WORLD — RESET
+// ============================================
+
+function resetWorldProgression() {
+    worldProgressionState.initialized = false;
+
+    worldProgressionState.lastSimulationDate = null;
+
+    worldProgressionState.simulatedDays = 0;
+
+    worldProgressionState.simulatedRaces = 0;
+
+    worldProgressionState.seasonChanges = 0;
+
+    worldProgressionState.worldEvents = [];
+}
+
+
+// ============================================
+// WORLD — INITIALIZE
+// ============================================
+
+function initializeWorldProgression() {
+    worldProgressionState.initialized = true;
+
+    worldProgressionState.lastSimulationDate =
+        getWorldCurrentDate();
+
+    return true;
+}
+
+
+initializeWorldProgression();
+// ============================================
+// CYCLING CAREER
+// script.js — Del 33
+// Core System Integration
+// ============================================
+
+const integrationState = {
+    initialized: false,
+
+    lastProcessedDate: null,
+
+    systemsChecked: 0,
+
+    systemsReady: 0,
+
+    warnings: []
+};
+
+
+// ============================================
+// INTEGRATION — SYSTEM CHECK
+// ============================================
+
+function checkSystem(
+    name,
+    requiredFunctions = [],
+    requiredState = []
+) {
+    const result = {
+        name,
+        ready: true,
+        missingFunctions: [],
+        missingState: []
+    };
+
+    requiredFunctions.forEach(
+        functionName => {
+            if (
+                typeof window !== "undefined" &&
+                typeof window[functionName] !==
+                    "function"
+            ) {
+                /*
+                    Most of our functions are declared
+                    directly in this script and are not
+                    necessarily properties of window in
+                    every environment.
+                */
+
+                try {
+                    eval(functionName);
+                } catch {
+                    result.missingFunctions.push(
+                        functionName
+                    );
+                }
+            }
+        }
+    );
+
+    requiredState.forEach(
+        stateName => {
+            try {
+                eval(stateName);
+            } catch {
+                result.missingState.push(
+                    stateName
+                );
+            }
+        }
+    );
+
+    result.ready =
+        result.missingFunctions.length === 0 &&
+        result.missingState.length === 0;
+
+    return result;
+}
+
+
+// ============================================
+// INTEGRATION — REQUIRED SYSTEMS
+// ============================================
+
+function runSystemIntegrityCheck() {
+    const checks = [
+
+        checkSystem(
+            "Game Core",
+            [
+                "changeScreen",
+                "render",
+                "startNewCareer"
+            ],
+            [
+                "game"
+            ]
+        ),
+
+        checkSystem(
+            "Rider Creation",
+            [
+                "generateRiderFromCreation",
+                "acceptGeneratedRider"
+            ],
+            [
+                "riderCreation"
+            ]
+        ),
+
+        checkSystem(
+            "Career Time",
+            [
+                "getCurrentDate",
+                "advanceToDate"
+            ],
+            [
+                "careerTime"
+            ]
+        ),
+
+        checkSystem(
+            "Career Events",
+            [
+                "createCareerEvent",
+                "addCareerEvent"
+            ],
+            [
+                "careerEvents"
+            ]
+        ),
+
+        checkSystem(
+            "Inbox",
+            [
+                "addInboxMessage",
+                "getInboxSummary"
+            ],
+            [
+                "inboxState"
+            ]
+        ),
+
+        checkSystem(
+            "Team Structure",
+            [
+                "initializeTeamStructure",
+                "getPlayerRole"
+            ],
+            [
+                "teamStructure"
+            ]
+        ),
+
+        checkSystem(
+            "Training",
+            [
+                "createTrainingPlan",
+                "completeTrainingPlan"
+            ],
+            [
+                "trainingState"
+            ]
+        ),
+
+        checkSystem(
+            "Recovery",
+            [
+                "applyDailyRecovery",
+                "getRecoveryStatus"
+            ],
+            [
+                "recoveryState"
+            ]
+        ),
+
+        checkSystem(
+            "Race Preparation",
+            [
+                "createRacePreparation",
+                "getRaceReadiness"
+            ],
+            [
+                "racePreparationState"
+            ]
+        ),
+
+        checkSystem(
+            "Race Simulation",
+            [
+                "initializeRaceSimulation",
+                "advanceRaceDistance"
+            ],
+            [
+                "raceSimulationState"
+            ]
+        ),
+
+        checkSystem(
+            "Race Actions",
+            [
+                "executeRaceAction",
+                "getAvailableRaceActions"
+            ],
+            [
+                "raceActionState"
+            ]
+        ),
+
+        checkSystem(
+            "Race Resolution",
+            [
+                "resolveRaceDecision"
+            ],
+            [
+                "raceResolutionState"
+            ]
+        ),
+
+        checkSystem(
+            "Race World",
+            [
+                "simulateRaceWorldStep"
+            ],
+            [
+                "raceWorldState"
+            ]
+        ),
+
+        checkSystem(
+            "Race Synchronization",
+            [
+                "synchronizeRaceWorld"
+            ],
+            [
+                "raceSyncState"
+            ]
+        ),
+
+        checkSystem(
+            "Race Progression",
+            [
+                "advanceRaceProgression"
+            ],
+            [
+                "raceProgressionState"
+            ]
+        ),
+
+        checkSystem(
+            "Race Situations",
+            [
+                "generateNextImportantRaceSituation"
+            ],
+            [
+                "raceSituationGeneratorState"
+            ]
+        ),
+
+        checkSystem(
+            "Race Controller",
+            [
+                "startControlledRace",
+                "runControlledRaceStep"
+            ],
+            [
+                "raceControllerState"
+            ]
+        ),
+
+        checkSystem(
+            "Race Results",
+            [
+                "finalizeRaceWithResults"
+            ],
+            [
+                "raceResultsState"
+            ]
+        ),
+
+        checkSystem(
+            "Stage Race",
+            [
+                "startStageRace",
+                "completeCurrentStage"
+            ],
+            [
+                "stageRaceState"
+            ]
+        ),
+
+        checkSystem(
+            "Calendar",
+            [
+                "getNextCalendarRace",
+                "requestRace"
+            ],
+            [
+                "calendarState"
+            ]
+        ),
+
+        checkSystem(
+            "Career History",
+            [
+                "addHistoryEntry",
+                "getCareerRecords"
+            ],
+            [
+                "careerHistoryState"
+            ]
+        ),
+
+        checkSystem(
+            "Save System",
+            [
+                "saveCareer",
+                "loadCareer"
+            ],
+            [
+                "saveState"
+            ]
+        ),
+
+        checkSystem(
+            "World Progression",
+            [
+                "processWorldProgression"
+            ],
+            [
+                "worldProgressionState"
+            ]
+        )
+    ];
+
+    integrationState.systemsChecked =
+        checks.length;
+
+    integrationState.systemsReady =
+        checks.filter(
+            check => check.ready
+        ).length;
+
+    integrationState.warnings =
+        checks
+            .filter(
+                check => !check.ready
+            )
+            .map(check => ({
+                system: check.name,
+
+                missingFunctions:
+                    check.missingFunctions,
+
+                missingState:
+                    check.missingState
+            }));
+
+    return checks;
+}
+
+
+// ============================================
+// INTEGRATION — DAILY PLAYER SYSTEMS
+// ============================================
+
+function processDailyPlayerSystems() {
+    if (!game.player) {
+        return false;
+    }
+
+    /*
+        Recovery and physical status.
+    */
+
+    if (
+        typeof applyDailyRecovery ===
+        "function"
+    ) {
+        applyDailyRecovery();
+    }
+
+    /*
+        Race preparation.
+    */
+
+    if (
+        typeof racePreparationState !==
+            "undefined" &&
+        racePreparationState.active
+    ) {
+        if (
+            typeof applyRacePreparationDay ===
+            "function"
+        ) {
+            applyRacePreparationDay();
+        }
+    }
+
+    return true;
+}
+
+
+// ============================================
+// INTEGRATION — CAREER DATE ADVANCEMENT
+// ============================================
+
+function processCareerDateChange(
+    previousDate,
+    currentDate
+) {
+    if (
+        !previousDate ||
+        !currentDate
+    ) {
+        return null;
+    }
+
+    const previous =
+        new Date(
+            `${previousDate}T00:00:00`
+        );
+
+    const current =
+        new Date(
+            `${currentDate}T00:00:00`
+        );
+
+    if (
+        Number.isNaN(
+            previous.getTime()
+        ) ||
+        Number.isNaN(
+            current.getTime()
+        )
+    ) {
+        return null;
+    }
+
+    const days =
+        Math.floor(
+            (
+                current.getTime() -
+                previous.getTime()
+            ) /
+            (
+                1000 *
+                60 *
+                60 *
+                24
+            )
+        );
+
+    if (days <= 0) {
+        return {
+            days: 0
+        };
+    }
+
+    /*
+        Run player systems for every simulated day.
+        We intentionally keep the player simulation
+        lightweight between important events.
+    */
+
+    for (
+        let day = 0;
+        day < days;
+        day++
+    ) {
+        processDailyPlayerSystems();
+    }
+
+    /*
+        World simulation.
+    */
+
+    let worldResult = null;
+
+    if (
+        typeof processWorldProgression ===
+        "function"
+    ) {
+        worldResult =
+            processWorldProgression(
+                previousDate,
+                currentDate
+            );
+    }
+
+    integrationState.lastProcessedDate =
+        currentDate;
+
+    return {
+        days,
+
+        world:
+            worldResult
+    };
+}
+
+
+// ============================================
+// INTEGRATION — CONTINUE
+// ============================================
+
+function processCareerContinue() {
+    const previousDate =
+        getCalendarCurrentDate();
+
+    /*
+        The existing Continue system decides
+        where the career should move.
+    */
+
+    let continueResult = null;
+
+    if (
+        typeof processNextCareerEvent ===
+        "function"
+    ) {
+        continueResult =
+            processNextCareerEvent();
+    }
+
+    const currentDate =
+        getCalendarCurrentDate();
+
+    if (
+        previousDate !== currentDate
+    ) {
+        processCareerDateChange(
+            previousDate,
+            currentDate
+        );
+    }
+
+    autoSaveCareer();
+
+    return {
+        previousDate,
+
+        currentDate,
+
+        continueResult
+    };
+}
+
+
+// ============================================
+// INTEGRATION — RACE COMPLETION
+// ============================================
+
+function processCompletedRace(
+    race,
+    result
+) {
+    if (!race) {
+        return false;
+    }
+
+    /*
+        Store result in career history.
+    */
+
+    if (
+        result &&
+        typeof saveCareerRaceResult ===
+        "function"
+    ) {
+        const historyResult =
+            saveCareerRaceResult(
+                result
+            );
+
+        if (
+            historyResult &&
+            typeof addRaceResultToSeason ===
+            "function"
+        ) {
+            addRaceResultToSeason(
+                historyResult
+            );
+        }
+    }
+
+    /*
+        Mark player calendar entry completed.
+    */
+
+    if (
+        typeof getPlayerCalendarEntry ===
+        "function"
+    ) {
+        const entry =
+            getPlayerCalendarEntry(
+                race.id
+            );
+
+        if (entry) {
+            entry.completed = true;
+        }
+    }
+
+    /*
+        Save after a race.
+    */
+
+    saveAfterMajorEvent(
+        "race completion"
+    );
+
+    return true;
+}
+
+
+// ============================================
+// INTEGRATION — CONTRACT EVENT
+// ============================================
+
+function processContractChange(
+    contract
+) {
+    if (!contract) {
+        return false;
+    }
+
+    game.contract =
+        contract;
+
+    addHistoryEntry({
+        type: "contract",
+
+        title:
+            "Contract Updated",
+
+        description:
+            "The player's contract has been updated.",
+
+        date:
+            getCalendarCurrentDate(),
+
+        data:
+            contract
+    });
+
+    saveAfterMajorEvent(
+        "contract change"
+    );
+
+    return true;
+}
+
+
+// ============================================
+// INTEGRATION — MAJOR DECISION
+// ============================================
+
+function processMajorCareerDecision(
+    title,
+    description,
+    data = {}
+) {
+    addCareerMajorMoment(
+        title,
+        description,
+        data
+    );
+
+    addHistoryEntry({
+        type: "decision",
+
+        title,
+
+        description,
+
+        date:
+            getCalendarCurrentDate(),
+
+        data
+    });
+
+    saveAfterMajorEvent(
+        "major decision"
+    );
+
+    return true;
+}
+
+
+// ============================================
+// INTEGRATION — RACE START
+// ============================================
+
+function processRaceStart(
+    race
+) {
+    if (!race) {
+        return false;
+    }
+
+    game.currentRace =
+        race;
+
+    game.currentScreen =
+        "race";
+
+    if (
+        typeof addHistoryEntry ===
+        "function"
+    ) {
+        addHistoryEntry({
+            type: "race_start",
+
+            title:
+                race.name,
+
+            description:
+                `Race started: ${race.name}`,
+
+            date:
+                race.startDate ||
+                getCalendarCurrentDate(),
+
+            data: {
+                raceId:
+                    race.id
+            }
+        });
+    }
+
+    return true;
+}
+
+
+// ============================================
+// INTEGRATION — CAREER STATE
+// ============================================
+
+function getCoreCareerState() {
+    return {
+        date:
+            getCalendarCurrentDate(),
+
+        year:
+            getWorldYear(),
+
+        player:
+            game.player,
+
+        team:
+            game.team,
+
+        contract:
+            game.contract,
+
+        agent:
+            game.agent,
+
+        currentRace:
+            game.currentRace,
+
+        nextRace:
+            getNextCalendarRace(),
+
+        records:
+            getCareerRecords(),
+
+        inbox:
+            typeof getInboxSummary ===
+            "function"
+                ? getInboxSummary()
+                : null,
+
+        recovery:
+            typeof getRecoveryStatus ===
+            "function"
+                ? getRecoveryStatus()
+                : null,
+
+        calendar:
+            typeof getCalendarSummary ===
+            "function"
+                ? getCalendarSummary()
+                : null
+    };
+}
+
+
+// ============================================
+// INTEGRATION — FULL STATUS
+// ============================================
+
+function getSystemIntegrationStatus() {
+    const checks =
+        runSystemIntegrityCheck();
+
+    return {
+        initialized:
+            integrationState.initialized,
+
+        systemsChecked:
+            integrationState.systemsChecked,
+
+        systemsReady:
+            integrationState.systemsReady,
+
+        systemsNotReady:
+            integrationState.systemsChecked -
+            integrationState.systemsReady,
+
+        warnings:
+            integrationState.warnings,
+
+        checks
+    };
+}
+
+
+// ============================================
+// INTEGRATION — DEBUG
+// ============================================
+
+function debugCoreIntegration() {
+    const status =
+        getSystemIntegrationStatus();
+
+    console.log(
+        "========== CORE INTEGRATION =========="
+    );
+
+    console.log(
+        "Systems checked:",
+        status.systemsChecked
+    );
+
+    console.log(
+        "Systems ready:",
+        status.systemsReady
+    );
+
+    console.log(
+        "Warnings:",
+        status.warnings
+    );
+
+    console.log(
+        "Career state:",
+        getCoreCareerState()
+    );
+
+    console.log(
+        "======================================"
+    );
+
+    return {
+        status,
+
+        career:
+            getCoreCareerState()
+    };
+}
+
+
+// ============================================
+// INTEGRATION — INITIALIZE
+// ============================================
+
+function initializeCoreIntegration() {
+    integrationState.initialized =
+        true;
+
+    integrationState.lastProcessedDate =
+        getCalendarCurrentDate();
+
+    const checks =
+        runSystemIntegrityCheck();
+
+    console.log(
+        "Core integration initialized."
+    );
+
+    console.log(
+        `Systems ready: ${checks.filter(
+            check => check.ready
+        ).length}/${checks.length}`
+    );
+
+    return true;
+}
+
+
+initializeCoreIntegration();
