@@ -1125,7 +1125,6 @@ function generateCreatedRider() {
     }
 
     return generateCreatedRider();
-}
 
 function acceptCreatedRider() {
     if (!game.player) {
@@ -1635,18 +1634,6 @@ function generateCompleteRiderData({
         createdAt:
             game.career.currentDate
     };
-}
-
-
-    if (!riderCreation.generated) {
-        console.warn(
-            "Generate the rider before regenerating."
-        );
-
-        return null;
-    }
-
-    return generateCreatedRider();
 }
 
 function getRiderCreationPreview() {
