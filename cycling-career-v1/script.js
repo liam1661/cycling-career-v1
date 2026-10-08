@@ -973,9 +973,7 @@ const riderCreation = {
     age: null,
 
     profile: null,
-
-    physicalTendency: "Balanced",
-    technicalTendency: "Balanced",
+    developmentTendency: "Balanced",
 
     generated: false,
     accepted: false
@@ -983,23 +981,7 @@ const riderCreation = {
 
 const validRiderAges = [16, 17, 18];
 
-const physicalTendencies = [
-    {
-        id: "physical",
-        name: "Physical",
-        description: "Slightly favors physical development."
-    },
-    {
-        id: "balanced",
-        name: "Balanced",
-        description: "Keeps physical and technical development balanced."
-    },
-    {
-        id: "technical",
-        name: "Technical",
-        description: "Slightly favors technical and race development."
-    }
-];
+
 
 function resetRiderCreation() {
     riderCreation.name = "";
@@ -1008,8 +990,7 @@ function resetRiderCreation() {
 
     riderCreation.profile = null;
 
-    riderCreation.physicalTendency = "Balanced";
-    riderCreation.technicalTendency = "Balanced";
+    riderCreation.developmentTendency = "Balanced";
 
     riderCreation.generated = false;
     riderCreation.accepted = false;
@@ -1079,48 +1060,6 @@ function setRiderProfile(profile) {
     return true;
 }
 
-function setPhysicalTendency(tendency) {
-    const valid =
-        physicalTendencies.some(
-            item =>
-                item.name === tendency
-        );
-
-    if (!valid) {
-        console.warn(
-            `Unknown physical tendency: ${tendency}`
-        );
-
-        return false;
-    }
-
-    riderCreation.physicalTendency =
-        tendency;
-
-    return true;
-}
-
-function setTechnicalTendency(tendency) {
-    const valid =
-        physicalTendencies.some(
-            item =>
-                item.name === tendency
-        );
-
-    if (!valid) {
-        console.warn(
-            `Unknown technical tendency: ${tendency}`
-        );
-
-        return false;
-    }
-
-    riderCreation.technicalTendency =
-        tendency;
-
-    return true;
-}
-
 function getRiderCreationState() {
     return {
         ...riderCreation
@@ -1174,37 +1113,9 @@ function validateRiderCreation() {
 }
 
 function generateCreatedRider() {
-    const validation =
-        validateRiderCreation();
-
-    if (!validation.valid) {
-        console.warn(
-            "Rider creation is incomplete:",
-            validation.errors
-        );
-
-        return null;
-    }
-
-    const rider =
-        generatePlayer({
-            name: riderCreation.name,
-            country: riderCreation.country,
-            age: riderCreation.age,
-            profile: riderCreation.profile
-        });
-
-    if (!rider) {
-        return null;
-    }
-
-    riderCreation.generated = true;
-    riderCreation.accepted = false;
-
-    return rider;
+    return generateRiderFromCreation();
 }
 
-function regenerateCreatedRider() {
     if (!riderCreation.generated) {
         console.warn(
             "Generate the rider before regenerating."
@@ -1372,32 +1283,12 @@ function getTendencyModifier(statId) {
         return 0;
     }
 
-    const physical =
+    const tendency =
         tendencyModifiers[
-            riderCreation.physicalTendency
+            riderCreation.developmentTendency
         ] || tendencyModifiers.Balanced;
 
-    const technical =
-        tendencyModifiers[
-            riderCreation.technicalTendency
-        ] || tendencyModifiers.Balanced;
-
-    /*
-        Physical tendency primarily affects
-        physical stats.
-
-        Technical tendency primarily affects
-        race/technical stats.
-
-        Terrain stays comparatively neutral
-        so that the rider profile remains the
-        main influence there.
-    */
-
-    return (
-        physical[group] +
-        technical[group]
-    );
+    return tendency[group] || 0;
 }
 
 function getProfileTendency(
@@ -1746,52 +1637,7 @@ function generateCompleteRiderData({
     };
 }
 
-function generateCreatedRider() {
-    const validation =
-        validateRiderCreation();
 
-    if (!validation.valid) {
-        console.warn(
-            "Rider creation is incomplete:",
-            validation.errors
-        );
-
-        return null;
-    }
-
-    const rider =
-        generateCompleteRiderData({
-            name:
-                riderCreation.name,
-
-            country:
-                riderCreation.country,
-
-            age:
-                riderCreation.age,
-
-            profile:
-                riderCreation.profile
-        });
-
-    if (!rider) {
-        return null;
-    }
-
-    game.player = rider;
-
-    riderCreation.generated = true;
-    riderCreation.accepted = false;
-
-    console.log(
-        "Generated rider:",
-        rider
-    );
-
-    return rider;
-}
-
-function regenerateCreatedRider() {
     if (!riderCreation.generated) {
         console.warn(
             "Generate the rider before regenerating."
