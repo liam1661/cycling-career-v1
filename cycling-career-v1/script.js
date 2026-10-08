@@ -1116,40 +1116,6 @@ function generateCreatedRider() {
     return generateRiderFromCreation();
 }
 
-    if (!riderCreation.generated) {
-        console.warn(
-            "Generate the rider before regenerating."
-        );
-
-        return null;
-    }
-
-    return generateCreatedRider();
-
-function acceptCreatedRider() {
-    if (!game.player) {
-        console.warn(
-            "No generated rider exists."
-        );
-
-        return false;
-    }
-
-    if (!riderCreation.generated) {
-        console.warn(
-            "Generate the rider before accepting."
-        );
-
-        return false;
-    }
-
-    riderCreation.accepted = true;
-
-    game.gameStarted = true;
-
-    return true;
-}
-
 function beginRiderCreation() {
     resetRiderCreation();
 
