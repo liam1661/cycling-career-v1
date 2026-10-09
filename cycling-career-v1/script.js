@@ -1994,16 +1994,7 @@ function canContinueFromCreation() {
 */
 
 function resetRiderCreationState() {
-    riderCreation.name = "";
-    riderCreation.country = null;
-    riderCreation.age = null;
-    riderCreation.profile = null;
-
-    riderCreation.developmentTendency =
-    "Balanced";
-
-    riderCreation.generated = false;
-    riderCreation.accepted = false;
+    resetRiderCreation();
 }
 
 console.log(
