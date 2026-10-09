@@ -113,25 +113,6 @@ function startNewCareer() {
     render();
 }
 
-
-// --------------------------------------------
-// CONTINUE CAREER
-// --------------------------------------------
-
-function continueCareer() {
-
-    console.log("Continue career");
-
-    if (!game.player) {
-        console.log("No career found.");
-        changeScreen("start");
-        return;
-    }
-
-    changeScreen("dashboard");
-}
-
-
 // --------------------------------------------
 // BASIC RENDER SYSTEM
 // --------------------------------------------
@@ -21458,7 +21439,7 @@ function setPlayerRaceRole(raceId, role) {
 }
 
 
-function getPlayerRaceRole(raceId) {
+function getCalendarRaceRole(raceId) {
     const entry = getPlayerCalendarEntry(raceId);
 
     return entry
