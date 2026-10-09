@@ -2000,7 +2000,7 @@ function resetRiderCreationState() {
     riderCreation.profile = null;
 
     riderCreation.developmentTendency =
-        null;
+    "Balanced";
 
     riderCreation.generated = false;
     riderCreation.accepted = false;
