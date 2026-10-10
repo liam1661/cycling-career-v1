@@ -2403,19 +2403,22 @@ function rejectAllTeamOffers() {
     );
 }
 
+
 function getContractEndDate(years) {
     const date =
-        new Date(
+        parseCareerDate(
             game.career.currentDate
         );
+
+    if (!date || !Number.isFinite(years)) {
+        return null;
+    }
 
     date.setFullYear(
         date.getFullYear() + years
     );
 
-    return date
-        .toISOString()
-        .split("T")[0];
+    return formatCareerDate(date);
 }
 
 function hasAcceptedTeam() {
@@ -2485,11 +2488,28 @@ const careerTime = {
     }
 };
 
+
 function parseCareerDate(dateString) {
+    if (
+        typeof dateString !== "string" ||
+        !/^\d{4}-\d{2}-\d{2}$/.test(dateString)
+    ) {
+        console.error(
+            `Invalid career date: ${dateString}`
+        );
+
+        return null;
+    }
+
     const date =
         new Date(`${dateString}T00:00:00`);
 
-    if (Number.isNaN(date.getTime())) {
+    if (
+        Number.isNaN(date.getTime()) ||
+        date.getFullYear() !== Number(dateString.slice(0, 4)) ||
+        date.getMonth() + 1 !== Number(dateString.slice(5, 7)) ||
+        date.getDate() !== Number(dateString.slice(8, 10))
+    ) {
         console.error(
             `Invalid career date: ${dateString}`
         );
@@ -2499,6 +2519,7 @@ function parseCareerDate(dateString) {
 
     return date;
 }
+
 
 
 
@@ -2526,23 +2547,39 @@ function getCurrentDateObject() {
     );
 }
 
+
 function setCareerDate(date) {
     const parsed =
         typeof date === "string"
             ? parseCareerDate(date)
             : date;
 
-    if (!parsed) {
+    if (
+        !(parsed instanceof Date) ||
+        Number.isNaN(parsed.getTime())
+    ) {
+        console.warn(
+            "Cannot set career date: invalid date."
+        );
+
+        return false;
+    }
+
+    const formattedDate =
+        formatCareerDate(parsed);
+
+    if (!formattedDate) {
         return false;
     }
 
     game.career.currentDate =
-        formatCareerDate(parsed);
+        formattedDate;
 
     updateCareerSeason();
 
     return true;
 }
+
 
 function addDaysToCareer(days) {
     const numericDays =
@@ -2839,45 +2876,39 @@ function updateCareerSeason() {
         year;
 }
 
+
 function getSeasonProgress() {
-    const day =
-        getDayOfYear();
+    const day = getDayOfYear();
 
     if (!day) {
         return 0;
     }
 
-    const currentYear =
-        getCurrentYear();
+    const currentYear = getCurrentYear();
 
-    const start =
-        new Date(
-            currentYear,
-            0,
-            1
-        );
+    const startOfYearUTC = Date.UTC(
+        currentYear,
+        0,
+        1
+    );
 
-    const end =
-        new Date(
-            currentYear + 1,
-            0,
-            1
-        );
+    const startOfNextYearUTC = Date.UTC(
+        currentYear + 1,
+        0,
+        1
+    );
+
+    const oneDay = 1000 * 60 * 60 * 24;
 
     const totalDays =
-        (
-            end - start
-        ) / (
-            1000 * 60 * 60 * 24
-        );
+        (startOfNextYearUTC - startOfYearUTC) /
+        oneDay;
 
     return Math.round(
-        (
-            day /
-            totalDays
-        ) * 100
+        (day / totalDays) * 100
     );
 }
+
 
 function getDaysBetween(
     startDate,
