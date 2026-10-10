@@ -2500,15 +2500,21 @@ function parseCareerDate(dateString) {
     return date;
 }
 
+
+
 function formatCareerDate(date) {
-    if (!(date instanceof Date)) {
+    if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
         return null;
     }
 
-    return date
-        .toISOString()
-        .split("T")[0];
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+
+    return `${year}-${month}-${day}`;
 }
+
+
 
 function getCurrentDate() {
     return game.career.currentDate;
@@ -2630,7 +2636,7 @@ function getCurrentDay() {
     return date.getDate();
 }
 
-function getDayOfYear() {
+function getDayOfYear()
     const date =
         getCurrentDateObject();
 
@@ -2645,16 +2651,24 @@ function getDayOfYear() {
             0
         );
 
-    const difference =
-        date - start;
+    const dateUTC = Date.UTC(
+    date.getFullYear(),
+    date.getMonth(),
+    date.getDate()
+);
 
-    const oneDay =
-        1000 * 60 * 60 * 24;
+const startUTC = Date.UTC(
+    date.getFullYear(),
+    0,
+    0
+);
 
-    return Math.floor(
-        difference / oneDay
-    );
-}
+const oneDay = 1000 * 60 * 60 * 24;
+
+return Math.floor(
+    (dateUTC - startUTC) / oneDay
+);
+
 
 function getWeekOfYear() {
     const date =
@@ -2664,26 +2678,29 @@ function getWeekOfYear() {
         return null;
     }
 
-    const start =
-        new Date(
-            date.getFullYear(),
-            0,
-            1
-        );
-
-    const difference =
-        date - start;
-
-    const oneWeek =
-        1000 * 60 * 60 * 24 * 7;
-
-    return Math.ceil(
-        (
-            difference /
-            oneWeek
-        ) + 1
+    const currentDateUTC = Date.UTC(
+        date.getFullYear(),
+        date.getMonth(),
+        date.getDate()
     );
+
+    const startOfYearUTC = Date.UTC(
+        date.getFullYear(),
+        0,
+        1
+    );
+
+    const oneDay =
+        1000 * 60 * 60 * 24;
+
+    const dayOfYear = Math.floor(
+        (currentDateUTC - startOfYearUTC) /
+        oneDay
+    );
+
+    return Math.floor(dayOfYear / 7) + 1;
 }
+
 
 function getMonthName(month) {
     const months = [
