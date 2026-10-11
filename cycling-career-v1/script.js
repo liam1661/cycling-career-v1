@@ -3286,7 +3286,19 @@ function getCareerEventById(eventId) {
 
 function markCareerEventComplete(
     eventId
+    
 ) {
+    
+function completeCurrentCareerEvent(type) {
+    const event = getCurrentCareerEvent();
+
+    if (!event || event.type !== type) {
+        return false;
+    }
+
+    return markCareerEventComplete(event.id);
+}
+
     const event =
         getCareerEventById(eventId);
 
@@ -3349,17 +3361,22 @@ function getCurrentCareerEvent() {
     return careerEvents.currentEvent;
 }
 
+
+
 function hasPendingAction() {
-    return getPendingCareerEvents()
-        .some(
-            event =>
-                event.requiresAction &&
-                isDateSameDay(
-                    event.date,
-                    game.career.currentDate
-                )
-        );
+    return careerEvents.queue.some(
+        event =>
+            event.requiresAction &&
+            ["Pending", "AwaitingAction"].includes(
+                event.status
+            ) &&
+            isDateSameDay(
+                event.date,
+                game.career.currentDate
+            )
+    );
 }
+
 
 function getEventsForDate(date) {
     return careerEvents.queue.filter(
@@ -3487,7 +3504,23 @@ function advanceToDate(date) {
     return true;
 }
 
+
 function processNextCareerEvent() {
+    const currentEvent =
+        getCurrentCareerEvent();
+
+    if (
+        currentEvent &&
+        !["Completed", "Cancelled"].includes(
+            currentEvent.status
+        )
+    ) {
+        return {
+            success: false,
+            reason: "Current event must be resolved first."
+        };
+    }
+
     const nextEvent =
         getNextCareerEvent();
 
@@ -3499,21 +3532,16 @@ function processNextCareerEvent() {
     }
 
     const reached =
-        advanceToDate(
-            nextEvent.date
-        );
+        advanceToDate(nextEvent.date);
 
     if (!reached) {
         return {
             success: false,
-            reason:
-                "Could not advance to event."
+            reason: "Could not advance to event."
         };
     }
 
-    setCurrentCareerEvent(
-        nextEvent
-    );
+    setCurrentCareerEvent(nextEvent);
 
     return {
         success: true,
@@ -3526,7 +3554,6 @@ function continueCareer() {
         console.warn(
             "Cannot continue without a player."
         );
-
         return false;
     }
 
@@ -3534,10 +3561,7 @@ function continueCareer() {
         processNextCareerEvent();
 
     if (!result.success) {
-        console.log(
-            "No career event found."
-        );
-
+        console.log(result.reason);
         return false;
     }
 
@@ -3546,9 +3570,7 @@ function continueCareer() {
         result.event
     );
 
-    handleCareerEvent(
-        result.event
-    );
+    handleCareerEvent(result.event);
 
     return true;
 }
@@ -3598,15 +3620,47 @@ function handleCareerEvent(event) {
     }
 }
 
+function createCareerEventInboxMessage(
+    event,
+    {
+        type,
+        priority
+    }
+) {
+    const message =
+        addInboxMessage({
+            id: `career-event-${event.id}`,
+            careerEventId: event.id,
+            type,
+            priority,
+            title: event.title,
+            body: event.description
+        });
+
+    if (!message) {
+        return null;
+    }
+
+    if (priority === "ACTION REQUIRED") {
+        if (message.completed) {
+            markCareerEventComplete(event.id);
+        } else {
+            event.status = "AwaitingAction";
+        }
+    } else {
+        markCareerEventComplete(event.id);
+    }
+
+    return message;
+}
+
 function handleRaceEvent(event) {
     console.log(
         "Race event reached:",
         event.title
     );
 
-    /*
-        Race Engine will take over here later.
-    */
+    event.status = "InProgress";
 
     changeScreen("race");
 }
@@ -3617,27 +3671,36 @@ function handleSelectionEvent(event) {
         event.title
     );
 
-    /*
-        Selection system will take over here later.
-    */
+    const message =
+        createCareerEventInboxMessage(
+            event,
+            {
+                type: "Sports Director",
+                priority: "ACTION REQUIRED"
+            }
+        );
 
-    addInboxMessage({
-        type: "Sports Director",
-        priority: "ACTION REQUIRED",
-        title: event.title,
-        body: event.description
-    });
+    if (!message) {
+        return;
+    }
 
     changeScreen("inbox");
 }
 
+
 function handleContractEvent(event) {
+    if (!event) {
+        return;
+    }
+
     console.log(
         "Contract event reached:",
         event.title
     );
 
     changeScreen("contract");
+
+    markCareerEventComplete(event.id);
 }
 
 function handleInjuryEvent(event) {
@@ -3646,12 +3709,18 @@ function handleInjuryEvent(event) {
         event.title
     );
 
-    addInboxMessage({
-        type: "Medical/Performance",
-        priority: "Important",
-        title: event.title,
-        body: event.description
-    });
+    const message =
+        createCareerEventInboxMessage(
+            event,
+            {
+                type: "Medical/Performance",
+                priority: "Important"
+            }
+        );
+
+    if (!message) {
+        return;
+    }
 
     changeScreen("inbox");
 }
@@ -3662,12 +3731,18 @@ function handleMeetingEvent(event) {
         event.title
     );
 
-    addInboxMessage({
-        type: "Team",
-        priority: "ACTION REQUIRED",
-        title: event.title,
-        body: event.description
-    });
+    const message =
+        createCareerEventInboxMessage(
+            event,
+            {
+                type: "Team",
+                priority: "ACTION REQUIRED"
+            }
+        );
+
+    if (!message) {
+        return;
+    }
 
     changeScreen("inbox");
 }
@@ -3678,12 +3753,18 @@ function handleTrainingEvent(event) {
         event.title
     );
 
-    addInboxMessage({
-        type: "Medical/Performance",
-        priority: "Important",
-        title: event.title,
-        body: event.description
-    });
+    const message =
+        createCareerEventInboxMessage(
+            event,
+            {
+                type: "Medical/Performance",
+                priority: "Important"
+            }
+        );
+
+    if (!message) {
+        return;
+    }
 
     changeScreen("inbox");
 }
@@ -3694,8 +3775,22 @@ function handleWorldEvent(event) {
         event.title
     );
 
+    markCareerEventComplete(event.id);
+
     changeScreen("world");
 }
+
+function handleSummaryEvent(event) {
+    console.log(
+        "Period summary:",
+        event.title
+    );
+
+    markCareerEventComplete(event.id);
+
+    changeScreen("dashboard");
+}
+
 
 function handleSummaryEvent(event) {
     console.log(
@@ -3797,7 +3892,13 @@ function createInboxMessage({
     body,
     date = game.career.currentDate,
     data = {},
-    action = null
+    action = null,
+    careerEventId = null
+            action,
+
+        careerEventId,
+
+        read: false,
 }) {
     if (!title || !body) {
         console.warn(
@@ -4057,10 +4158,53 @@ function unarchiveInboxMessage(
     return true;
 }
 
-function completeInboxAction(
-    messageId
-) {
+
+function completeInboxAction(messageId) {
     const message =
+        getInboxMessageById(messageId);
+
+    if (!message) {
+        return false;
+    }
+
+    if (
+        message.priority !== "ACTION REQUIRED"
+    ) {
+        console.warn(
+            "This message does not require an action."
+        );
+
+        return false;
+    }
+
+    if (message.completed) {
+        return true;
+    }
+
+    message.completed = true;
+    message.read = true;
+
+    if (message.careerEventId) {
+        const event =
+            getCareerEventById(
+                message.careerEventId
+            );
+
+        if (event) {
+            markCareerEventComplete(event.id);
+        } else {
+            console.warn(
+                "Linked career event was not found:",
+                message.careerEventId
+            );
+        }
+    }
+
+    updateInboxCounters();
+
+    return true;
+}
+   const message =
         getInboxMessageById(
             messageId
         );
@@ -10807,10 +10951,12 @@ function finishRaceSimulation() {
 
             urgency:
                 "Critical"
+                
         })
     );
 
     return true;
+    completeCurrentCareerEvent("race");
 }
 
 
