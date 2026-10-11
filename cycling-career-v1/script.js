@@ -2586,8 +2586,8 @@ function addDaysToCareer(days) {
         Number(days);
 
     if (
-        !Number.isFinite(numericDays) ||
-        numericDays < 0
+    !Number.isInteger(numericDays) ||
+    numericDays < 0
     ) {
         console.warn(
             "Days must be a positive number."
@@ -2634,9 +2634,23 @@ function advanceOneWeek() {
     return addDaysToCareer(7);
 }
 
+
 function advanceWeeks(weeks) {
+    const numericWeeks = Number(weeks);
+
+    if (
+        !Number.isInteger(numericWeeks) ||
+        numericWeeks < 0
+    ) {
+        console.warn(
+            "Weeks must be a non-negative whole number."
+        );
+
+        return false;
+    }
+
     return addDaysToCareer(
-        Number(weeks) * 7
+        numericWeeks * 7
     );
 }
 
@@ -2663,6 +2677,7 @@ function getCurrentMonth() {
 }
 
 function getCurrentDay() {
+
     const date =
         getCurrentDateObject();
 
@@ -2673,7 +2688,7 @@ function getCurrentDay() {
     return date.getDate();
 }
 
-function getDayOfYear()
+function getDayOfYear () 
     const date =
         getCurrentDateObject();
 
@@ -3031,18 +3046,35 @@ function getCareerTimeState() {
     };
 }
 
+
 function resetCareerTime() {
+    const startDate =
+        parseCareerDate(careerTime.startDate);
+
+    if (!startDate) {
+        console.error(
+            "Cannot reset career time: invalid start date."
+        );
+        return false;
+    }
+
+    const formattedStartDate =
+        formatCareerDate(startDate);
+
+    const startYear =
+        startDate.getFullYear();
+
     game.career.currentDate =
-        careerTime.startDate;
+        formattedStartDate;
 
     game.career.season =
-        2026;
+        startYear;
 
     game.career.daysPassed =
         0;
 
     game.world.year =
-        2026;
+        startYear;
 
     careerTime.simulation.daysPassed =
         0;
@@ -3055,7 +3087,10 @@ function resetCareerTime() {
 
     careerTime.simulation.yearsPassed =
         0;
+
+    return true;
 }
+
 
 console.log(
     "Career Time system loaded."
