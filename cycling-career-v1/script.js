@@ -2925,37 +2925,34 @@ function getSeasonProgress() {
 }
 
 
-function getDaysBetween(
-    startDate,
-    endDate
-) {
-    const start =
-        parseCareerDate(
-            startDate
-        );
 
-    const end =
-        parseCareerDate(
-            endDate
-        );
+function getDaysBetween(startDate, endDate) {
+    const start = parseCareerDate(startDate);
+    const end = parseCareerDate(endDate);
 
     if (!start || !end) {
         return null;
     }
 
-    const difference =
-        end - start;
+    const startUTC = Date.UTC(
+        start.getFullYear(),
+        start.getMonth(),
+        start.getDate()
+    );
+
+    const endUTC = Date.UTC(
+        end.getFullYear(),
+        end.getMonth(),
+        end.getDate()
+    );
+
+    const oneDay = 1000 * 60 * 60 * 24;
 
     return Math.round(
-        difference /
-        (
-            1000 *
-            60 *
-            60 *
-            24
-        )
+        (endUTC - startUTC) / oneDay
     );
 }
+
 
 function isDateBefore(
     firstDate,
