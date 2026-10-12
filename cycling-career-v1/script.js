@@ -4169,25 +4169,6 @@ function completeInboxAction(messageId) {
 
     return true;
 }
-   const message =
-        getInboxMessageById(
-            messageId
-        );
-
-    if (!message) {
-        return false;
-    }
-
-    if (
-        message.priority !==
-        "ACTION REQUIRED"
-    ) {
-        console.warn(
-            "This message does not require an action."
-        );
-
-        return false;
-    }
 
 function deleteInboxMessage(
     messageId
