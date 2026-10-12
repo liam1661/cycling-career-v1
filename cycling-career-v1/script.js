@@ -2688,38 +2688,31 @@ function getCurrentDay() {
     return date.getDate();
 }
 
-function getDayOfYear () 
-    const date =
-        getCurrentDateObject();
+function getDayOfYear() {
+    const date = getCurrentDateObject();
 
     if (!date) {
         return null;
     }
 
-    const start =
-        new Date(
-            date.getFullYear(),
-            0,
-            0
-        );
+    const currentDateUTC = Date.UTC(
+        date.getFullYear(),
+        date.getMonth(),
+        date.getDate()
+    );
 
-    const dateUTC = Date.UTC(
-    date.getFullYear(),
-    date.getMonth(),
-    date.getDate()
-);
+    const startOfYearUTC = Date.UTC(
+        date.getFullYear(),
+        0,
+        1
+    );
 
-const startUTC = Date.UTC(
-    date.getFullYear(),
-    0,
-    0
-);
+    const oneDay = 1000 * 60 * 60 * 24;
 
-const oneDay = 1000 * 60 * 60 * 24;
-
-return Math.floor(
-    (dateUTC - startUTC) / oneDay
-);
+    return Math.floor(
+        (currentDateUTC - startOfYearUTC) / oneDay
+    ) + 1;
+}
 
 
 function getWeekOfYear() {
@@ -3894,11 +3887,6 @@ function createInboxMessage({
     data = {},
     action = null,
     careerEventId = null
-            action,
-
-        careerEventId,
-
-        read: false,
 }) {
     if (!title || !body) {
         console.warn(
@@ -3930,27 +3918,17 @@ function createInboxMessage({
             `message-${Date.now()}-${randomInt(100, 999)}`,
 
         type,
-
         priority,
-
         title,
-
         body,
-
         date,
-
         data,
-
         action,
-
+        careerEventId,
         read: false,
-
         archived: false,
-
         completed: false,
-
-        createdAt:
-            game.career.currentDate
+        createdAt: game.career.currentDate
     };
 }
 
@@ -4167,9 +4145,7 @@ function completeInboxAction(messageId) {
         return false;
     }
 
-    if (
-        message.priority !== "ACTION REQUIRED"
-    ) {
+    if (message.priority !== "ACTION REQUIRED") {
         console.warn(
             "This message does not require an action."
         );
@@ -4177,27 +4153,16 @@ function completeInboxAction(messageId) {
         return false;
     }
 
-    if (message.completed) {
-        return true;
-    }
-
     message.completed = true;
     message.read = true;
 
-    if (message.careerEventId) {
-        const event =
-            getCareerEventById(
-                message.careerEventId
-            );
-
-        if (event) {
-            markCareerEventComplete(event.id);
-        } else {
-            console.warn(
-                "Linked career event was not found:",
-                message.careerEventId
-            );
-        }
+    if (
+        message.careerEventId &&
+        typeof markCareerEventComplete === "function"
+    ) {
+        markCareerEventComplete(
+            message.careerEventId
+        );
     }
 
     updateInboxCounters();
@@ -4223,14 +4188,6 @@ function completeInboxAction(messageId) {
 
         return false;
     }
-
-    message.completed = true;
-    message.read = true;
-
-    updateInboxCounters();
-
-    return true;
-}
 
 function deleteInboxMessage(
     messageId
