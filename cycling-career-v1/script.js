@@ -166,10 +166,19 @@ function render() {
 // --------------------------------------------
 
 function initializeGame() {
-
     console.log("Cycling Career initialized.");
 
-    console.log("Game state:", game);
+    document.getElementById("new-career-button")
+        ?.addEventListener("click", startNewCareer);
+
+    document.getElementById("continue-career-button")
+        ?.addEventListener("click", continueCareer);
+
+    document.getElementById("load-career-button")
+        ?.addEventListener("click", loadCareer);
+
+    document.getElementById("settings-button")
+        ?.addEventListener("click", () => changeScreen("settings"));
 
     render();
 }
