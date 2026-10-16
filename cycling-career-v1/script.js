@@ -118,16 +118,46 @@ function startNewCareer() {
 // --------------------------------------------
 
 function render() {
-
     console.log("Rendering:", game.currentScreen);
 
-    /*
-        HTML bliver koblet på her senere.
+    const mainScreens = {
+        start: "screen-start",
+        "create-rider": "screen-create-rider",
+        offers: "screen-offers"
+    };
 
-        Vi bygger først selve spillets
-        JavaScript-struktur, så alle systemer
-        har et fælles fundament.
-    */
+    // Vis kun den relevante hovedskærm.
+    document.querySelectorAll("#app > main.screen").forEach(screen => {
+        screen.classList.remove("active");
+        screen.hidden = true;
+    });
+
+    const screenId = mainScreens[game.currentScreen];
+
+    if (screenId) {
+        const screen = document.getElementById(screenId);
+
+        if (screen) {
+            screen.hidden = false;
+            screen.classList.add("active");
+        }
+
+        return;
+    }
+
+    // Alle øvrige skærme bruger spillets hovedområde.
+    const gameScreen = document.getElementById("screen-game");
+
+    if (gameScreen) {
+        gameScreen.hidden = false;
+        gameScreen.classList.add("active");
+    }
+
+    const title = document.getElementById("game-header-title");
+
+    if (title && typeof getScreenTitle === "function") {
+        title.textContent = getScreenTitle(game.currentScreen);
+    }
 }
 
 
