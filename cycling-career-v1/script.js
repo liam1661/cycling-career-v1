@@ -1146,6 +1146,9 @@ function beginRiderCreation() {
     game.currentRace = null;
 
     changeScreen("create-rider");
+
+    renderRiderCreationOptions();
+    updateRiderCreationButtons();
 }
 
 function finishRiderCreation() {
@@ -25337,3 +25340,137 @@ function initializeCoreIntegration() {
 
 
 initializeCoreIntegration();
+
+function renderRiderCreationOptions() {
+    const countrySelect = document.getElementById("rider-country");
+    const ageContainer = document.getElementById("age-options");
+    const profileContainer = document.getElementById("profile-options");
+    const tendencyContainer = document.getElementById("tendency-options");
+
+    if (!countrySelect || !ageContainer || !profileContainer || !tendencyContainer) {
+        console.error("Rider creation HTML elements are missing.");
+        return;
+    }
+
+    // Countries
+    const countries = [
+        ["DK", "Denmark"],
+        ["SE", "Sweden"],
+        ["NO", "Norway"],
+        ["FI", "Finland"],
+        ["GB", "United Kingdom"],
+        ["BE", "Belgium"],
+        ["NL", "Netherlands"],
+        ["FR", "France"],
+        ["DE", "Germany"],
+        ["ES", "Spain"],
+        ["IT", "Italy"],
+        ["CH", "Switzerland"],
+        ["US", "United States"],
+        ["AU", "Australia"],
+        ["CA", "Canada"]
+    ];
+
+    countrySelect.replaceChildren(new Option("Select country", ""));
+    countries.forEach(([code, name]) => {
+        countrySelect.add(new Option(name, code));
+    });
+
+    countrySelect.value = riderCreation.country || "";
+
+    countrySelect.onchange = () => {
+        setCreationValue("country", countrySelect.value);
+        updateRiderCreationButtons();
+    };
+
+    // Ages
+    ageContainer.replaceChildren();
+
+    riderCreationOptions.ages.forEach(age => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "choice-button";
+        button.textContent = String(age);
+        button.classList.toggle("selected", riderCreation.age === age);
+        button.onclick = () => {
+            setCreationValue("age", age);
+            renderRiderCreationOptions();
+            updateRiderCreationButtons();
+        };
+        ageContainer.appendChild(button);
+    });
+
+    // Rider profiles
+    profileContainer.replaceChildren();
+
+    getAvailableRiderProfiles().forEach(profile => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "choice-button";
+        button.classList.toggle("selected", riderCreation.profile === profile.id);
+
+        const title = document.createElement("strong");
+        title.textContent = profile.name;
+
+        const description = document.createElement("span");
+        description.textContent = profile.description;
+
+        button.append(title, description);
+
+        button.onclick = () => {
+            setCreationValue("profile", profile.id);
+            renderRiderCreationOptions();
+            updateRiderCreationButtons();
+        };
+
+        profileContainer.appendChild(button);
+    });
+
+    // Development tendencies
+    tendencyContainer.replaceChildren();
+
+    riderCreationOptions.tendencies.forEach(tendency => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "choice-button";
+        button.textContent = tendency;
+        button.classList.toggle(
+            "selected",
+            riderCreation.developmentTendency === tendency
+        );
+
+        button.onclick = () => {
+            setCreationValue("tendency", tendency);
+            renderRiderCreationOptions();
+            updateRiderCreationButtons();
+        };
+
+        tendencyContainer.appendChild(button);
+    });
+}
+
+function updateRiderCreationButtons() {
+    const nameInput = document.getElementById("rider-name");
+    const generateButton = document.getElementById("generate-rider-button");
+    const regenerateButton = document.getElementById("regenerate-rider-button");
+    const acceptButton = document.getElementById("accept-rider-button");
+
+    if (nameInput) {
+        setRiderName(nameInput.value);
+    }
+
+    const complete = canGenerateRider();
+
+    if (generateButton) {
+        generateButton.disabled = !complete;
+    }
+
+    if (regenerateButton) {
+        regenerateButton.disabled = !riderCreation.generated;
+    }
+
+    if (acceptButton) {
+        acceptButton.hidden = !riderCreation.generated;
+        acceptButton.disabled = !riderCreation.generated;
+    }
+}
