@@ -1203,7 +1203,7 @@ function beginRiderCreation() {
     updateRiderCreationButtons();
 }
 
-```javascript
+javascript
 function finishRiderCreation() {
     if (!riderCreation.accepted) {
         console.warn("Rider has not been accepted.");
@@ -1221,7 +1221,6 @@ function finishRiderCreation() {
 
     return true;
 }
-```
 
 function getSelectedProfile() {
     if (!riderCreation.profile) {
