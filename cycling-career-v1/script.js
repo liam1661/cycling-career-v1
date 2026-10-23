@@ -2565,6 +2565,84 @@ function getAllTeamOfferSummaries() {
 console.log(
     "Team Offers system loaded."
 );
+
+javascript
+function renderTeamOffers() {
+    const container = document.getElementById("team-offers");
+
+    if (!container) {
+        console.error('Elementet "#team-offers" blev ikke fundet.');
+        return;
+    }
+
+    const offers = getTeamOffers();
+
+    container.replaceChildren();
+
+    if (!offers.length) {
+        container.textContent = "No team offers available.";
+        return;
+    }
+
+    offers.forEach(offer => {
+        const card = document.createElement("article");
+        card.className = "team-offer-card";
+
+        const title = document.createElement("h3");
+        title.textContent = offer.teamName;
+
+        const level = document.createElement("p");
+        level.textContent = `Team level: ${offer.teamLevel}`;
+
+        const role = document.createElement("p");
+        role.textContent = `Role: ${offer.role}`;
+
+        const salary = document.createElement("p");
+        salary.textContent = `Annual salary: €${Number(offer.salary).toLocaleString("en-GB")}`;
+
+        const development = document.createElement("p");
+        development.textContent = `Development: ${offer.development}/100`;
+
+        const raceAccess = document.createElement("p");
+        raceAccess.textContent = `Race access: ${offer.raceAccess}/100`;
+
+        const description = document.createElement("p");
+        description.textContent =
+            offerTypes[offer.offerType]?.description ?? "";
+
+        const selectButton = document.createElement("button");
+        selectButton.type = "button";
+        selectButton.textContent = "Choose team";
+
+        selectButton.addEventListener("click", () => {
+            const selected = selectTeamOffer(offer.id);
+
+            if (!selected) return;
+
+            document.querySelectorAll(".team-offer-card").forEach(element => {
+                element.classList.remove("selected");
+            });
+
+            card.classList.add("selected");
+
+            console.log("Selected team offer:", getSelectedTeamOffer());
+        });
+
+        card.append(
+            title,
+            level,
+            role,
+            salary,
+            development,
+            raceAccess,
+            description,
+            selectButton
+        );
+
+        container.appendChild(card);
+    });
+}
+
 // ============================================
 // CYCLING CAREER
 // script.js — Del 8
