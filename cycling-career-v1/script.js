@@ -198,7 +198,6 @@ function initializeGame() {
             return;
         }
 
-        renderGeneratedRider();
         updateRiderCreationButtons();
     });
 
@@ -207,7 +206,6 @@ function initializeGame() {
 
         if (!rider) return;
 
-        renderGeneratedRider();
         updateRiderCreationButtons();
     });
 
