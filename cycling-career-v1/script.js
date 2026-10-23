@@ -1203,27 +1203,25 @@ function beginRiderCreation() {
     updateRiderCreationButtons();
 }
 
+```javascript
 function finishRiderCreation() {
     if (!riderCreation.accepted) {
-        console.warn(
-            "Rider has not been accepted."
-        );
-
+        console.warn("Rider has not been accepted.");
         return false;
     }
 
     if (!game.player) {
-        console.warn(
-            "No player exists."
-        );
-
+        console.warn("No player exists.");
         return false;
     }
 
+    generateTeamOffers();
     changeScreen("offers");
+    renderTeamOffers();
 
     return true;
 }
+```
 
 function getSelectedProfile() {
     if (!riderCreation.profile) {
