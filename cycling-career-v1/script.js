@@ -104,6 +104,7 @@ function changeScreen(screen) {
 // --------------------------------------------
 
 function startNewCareer() {
+    beginRiderCreation();
 
     console.log("Starting new career...");
 
