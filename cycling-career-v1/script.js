@@ -104,14 +104,10 @@ function changeScreen(screen) {
 // --------------------------------------------
 
 function startNewCareer() {
-    beginRiderCreation();
-
     console.log("Starting new career...");
 
-    game.currentScreen = "create-rider";
     game.gameStarted = false;
-
-    render();
+    beginRiderCreation();
 }
 
 // --------------------------------------------
@@ -169,27 +165,84 @@ function render() {
 function initializeGame() {
     console.log("Cycling Career initialized.");
 
-    document.getElementById("new-career-button")
-        ?.addEventListener("click", startNewCareer);
+    const bindClick = (id, handler) => {
+        const button = document.getElementById(id);
 
-    document.getElementById("continue-career-button")
-        ?.addEventListener("click", continueCareer);
+        if (!button) {
+            console.warn(`Button not found: ${id}`);
+            return;
+        }
 
-    document.getElementById("load-career-button")
-        ?.addEventListener("click", loadCareer);
+        button.onclick = handler;
+    };
 
-    document.getElementById("settings-button")
-        ?.addEventListener("click", () => changeScreen("settings"));
+    // Main menu
+    bindClick("new-career-button", startNewCareer);
+    bindClick("continue-career-button", continueCareer);
+    bindClick("load-career-button", loadCareer);
+    bindClick("settings-button", () => changeScreen("settings"));
+
+    // Rider creation
+    bindClick("generate-rider-button", () => {
+        const nameInput = document.getElementById("rider-name");
+
+        if (nameInput) {
+            setRiderName(nameInput.value);
+        }
+
+        const rider = generateRiderFromCreation();
+
+        if (!rider) {
+            console.warn("Rider generation failed. Check the required fields.");
+            updateRiderCreationButtons();
+            return;
+        }
+
+        renderGeneratedRider();
+        updateRiderCreationButtons();
+    });
+
+    bindClick("regenerate-rider-button", () => {
+        const rider = regenerateRiderFromCreation();
+
+        if (!rider) return;
+
+        renderGeneratedRider();
+        updateRiderCreationButtons();
+    });
+
+    bindClick("accept-rider-button", () => {
+        if (!acceptGeneratedRider()) return;
+
+        finishRiderCreation();
+    });
+
+    bindClick("back-to-start-button", () => {
+        changeScreen("start");
+    });
+
+    // Keep the form state and button availability updated.
+    const nameInput = document.getElementById("rider-name");
+
+    if (nameInput) {
+        nameInput.addEventListener("input", updateRiderCreationButtons);
+    }
+
+    const countrySelect = document.getElementById("rider-country");
+
+    if (countrySelect) {
+        countrySelect.addEventListener("change", updateRiderCreationButtons);
+    }
 
     render();
 }
 
+if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", initializeGame, { once: true });
+} else {
+    initializeGame();
+}
 
-// --------------------------------------------
-// START
-// --------------------------------------------
-
-initializeGame();
 // ============================================
 // CYCLING CAREER
 // script.js — Del 2
