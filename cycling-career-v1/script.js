@@ -232,7 +232,7 @@ function initializeGame() {
         countrySelect.addEventListener("change", updateRiderCreationButtons);
     }
 
-    render();
+            render();
 }
 
 if (document.readyState === "loading") {
@@ -477,6 +477,7 @@ function getActiveNavigationItem() {
 }
 
 console.log("Screen system loaded.");
+
 // ============================================
 // CYCLING CAREER
 // script.js — Del 3
@@ -1203,7 +1204,6 @@ function beginRiderCreation() {
     updateRiderCreationButtons();
 }
 
-javascript
 function finishRiderCreation() {
     if (!riderCreation.accepted) {
         console.warn("Rider has not been accepted.");
@@ -2563,7 +2563,6 @@ console.log(
     "Team Offers system loaded."
 );
 
-javascript
 function renderTeamOffers() {
     const container = document.getElementById("team-offers");
 
